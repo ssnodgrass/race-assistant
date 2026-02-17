@@ -47,7 +47,16 @@ body, html, #root {
 .main-content {
   flex-grow: 1;
   overflow-y: auto;
-  padding: 30px;
+  display: flex;
+  flex-direction: column;
+  height: 100vh;
+}
+
+.view-container {
+  flex-grow: 1;
+  display: flex;
+  flex-direction: column;
+  min-height: 100%;
 }
 
 /* Sidebar Styling */

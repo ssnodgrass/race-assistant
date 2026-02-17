@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { TimingService } from '../../bindings/github.com/ssnodgrass/race-assistant/services';
 import { Participant, Event as RaceEvent, ChuteAssignment } from '../../bindings/github.com/ssnodgrass/race-assistant/models';
 
@@ -6,34 +6,83 @@ interface PlacementEntryProps {
   raceID: number;
   participants: Participant[];
   events: RaceEvent[];
+  onBack?: () => void;
 }
 
-export const PlacementEntry: React.FC<PlacementEntryProps> = ({ raceID, participants, events }) => {
+export const PlacementEntry: React.FC<PlacementEntryProps> = ({ raceID, participants, events, onBack }) => {
   const [placements, setPlacements] = useState<ChuteAssignment[]>([]);
-  const [place, setPlace] = useState('1');
+  const [place, setPlace] = useState('');
+  const [nextPlace, setNextPlace] = useState(1);
   const [bib, setBib] = useState('');
   const [search, setSearch] = useState('');
   const [showUnassigned, setShowUnassigned] = useState(false);
+  
+  const bibInputRef = useRef<HTMLInputElement>(null);
+  const formRef = useRef<HTMLDivElement>(null);
+  const tableRef = useRef<HTMLTableElement>(null);
+  const sidebarRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     loadPlacements();
-  }, [raceID]);
+
+    // Global click listener to detect "clicking outside" the interactive areas
+    const handleGlobalClick = (e: MouseEvent) => {
+        const target = e.target as HTMLElement;
+        
+        // If clicking something that should be "ignored" (like inputs or buttons), don't reset
+        if (target.tagName === 'BUTTON' || target.tagName === 'INPUT' || target.tagName === 'SELECT') {
+            return;
+        }
+
+        // Check if the click is inside any of our interactive containers
+        const isInsideInteractive = 
+            formRef.current?.contains(target) || 
+            tableRef.current?.contains(target) || 
+            sidebarRef.current?.contains(target);
+
+        if (!isInsideInteractive) {
+            resetTarget();
+        }
+    };
+
+    window.addEventListener('mousedown', handleGlobalClick);
+    return () => window.removeEventListener('mousedown', handleGlobalClick);
+  }, [raceID, nextPlace]); // Re-bind when nextPlace changes so resetTarget has latest value
 
   const loadPlacements = () => {
     TimingService.ListPlacements(raceID).then(data => {
-        setPlacements(data || []);
-        const nextPlace = (data?.length > 0) ? Math.max(...data.map(d => d.place)) + 1 : 1;
-        setPlace(nextPlace.toString());
+        const sorted = data || [];
+        setPlacements(sorted);
+        const next = (sorted.length > 0) ? Math.max(...sorted.map(d => d.place)) + 1 : 1;
+        setNextPlace(next);
+        
+        setPlace(prev => {
+            if (!prev || parseInt(prev) >= next - 1) return next.toString();
+            return prev;
+        });
     }).catch(console.error);
+  };
+
+  const resetTarget = () => {
+    setPlace(nextPlace.toString());
   };
 
   const handleAssign = async (p: number, b: string, skipConfirm = false) => {
     if (!b || !p) return;
 
-    if (!skipConfirm && b !== "?") {
-        const existingPlace = await TimingService.GetBibAssignment(raceID, b);
-        if (existingPlace > 0 && existingPlace !== p) {
-            if (!window.confirm(`Bib ${b} is already assigned to place ${existingPlace}. Move it to place ${p}?`)) {
+    if (!skipConfirm) {
+        if (b !== "?") {
+            const existingPlace = await TimingService.GetBibAssignment(raceID, b);
+            if (existingPlace > 0 && existingPlace !== p) {
+                if (!window.confirm(`Bib ${b} is already assigned to place ${existingPlace}. Move it to place ${p}?`)) {
+                    return;
+                }
+            }
+        }
+
+        const existingAtPlace = placements.find(pl => pl.place === p);
+        if (existingAtPlace && existingAtPlace.bib_number !== b && existingAtPlace.bib_number !== "?") {
+            if (!window.confirm(`Place ${p} is already occupied by bib ${existingAtPlace.bib_number}. Overwrite with bib ${b}?`)) {
                 return;
             }
         }
@@ -43,6 +92,7 @@ export const PlacementEntry: React.FC<PlacementEntryProps> = ({ raceID, particip
       .then(() => {
         loadPlacements();
         setBib('');
+        bibInputRef.current?.focus();
       })
       .catch(console.error);
   };
@@ -75,80 +125,144 @@ export const PlacementEntry: React.FC<PlacementEntryProps> = ({ raceID, particip
     tableRows.push({ index: i, data: p });
   }
 
+  const selectFromLookup = (participantBib: string) => {
+    setBib(participantBib);
+    setTimeout(() => {
+        bibInputRef.current?.focus();
+    }, 10);
+  };
+
   return (
-    <div>
+    <div style={{ display: 'flex', flexDirection: 'column', flexGrow: 1, minHeight: '100%', padding: '30px' }}>
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '20px' }}>
-        <h2>Placements</h2>
-        <button onClick={() => setShowUnassigned(!showUnassigned)}>
-            {showUnassigned ? 'Hide Unassigned' : 'Show Unassigned Runners'}
-        </button>
+        <h2>Placements Management</h2>
+        <div style={{ display: 'flex', gap: '10px' }}>
+            <button onClick={() => setShowUnassigned(!showUnassigned)} style={{ backgroundColor: showUnassigned ? 'var(--accent)' : '#444' }}>
+                {showUnassigned ? 'Hide Unassigned' : 'Show Unassigned Runners'}
+            </button>
+            {onBack && <button onClick={onBack} style={{ backgroundColor: '#555' }}>Back</button>}
+        </div>
       </div>
 
-      <div style={{ display: 'flex', gap: '20px', alignItems: 'flex-start' }}>
-        <div style={{ flex: 3 }}>
-            <div className="card" style={{ marginBottom: '20px', border: '1px solid var(--accent)' }}>
+      <div style={{ display: 'flex', gap: '20px', alignItems: 'flex-start', flexGrow: 1 }}>
+        <div style={{ flex: 3, height: '100%' }}>
+            <div ref={formRef} className="card" style={{ marginBottom: '20px', border: '1px solid #007bff', padding: '20px' }}>
                 <form onSubmit={(e) => { e.preventDefault(); handleAssign(parseInt(place), bib); }} style={{ display: 'flex', gap: '20px', alignItems: 'flex-end' }}>
-                    <div>
-                        <label>Place:</label><br/>
-                        <input type="number" value={place} onChange={e => setPlace(e.target.value)} style={{ width: '70px' }} />
+                    <div style={{ position: 'relative' }}>
+                        <label>Target Place:</label><br/>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '5px' }}>
+                            <input type="number" value={place} onChange={e => setPlace(e.target.value)} style={{ fontSize: '1.2em', width: '70px' }} />
+                            {parseInt(place) !== nextPlace && (
+                                <button type="button" title="Reset to Next Place" onClick={(e) => { e.stopPropagation(); resetTarget(); }} style={{ padding: '4px 8px', backgroundColor: '#444', fontSize: '0.8em' }}>↺</button>
+                            )}
+                        </div>
                     </div>
                     <div>
-                        <label>Bib #:</label><br/>
-                        <input autoFocus value={bib} onChange={e => setBib(e.target.value)} style={{ width: '120px' }} placeholder="Bib" />
+                        <label>Bib Number:</label><br/>
+                        <input 
+                            ref={bibInputRef}
+                            autoFocus 
+                            value={bib} 
+                            onChange={e => setBib(e.target.value)} 
+                            style={{ fontSize: '1.2em', width: '120px' }} 
+                            placeholder="Bib" 
+                        />
                     </div>
-                    <button type="submit">Assign</button>
-                    <button type="button" onClick={() => handleAssign(parseInt(place), "?", true)} style={{ backgroundColor: 'var(--warning)', color: 'black' }}>Placeholder</button>
+                    <button type="submit" style={{ padding: '8px 20px' }}>Assign Bib (Enter)</button>
+                    <button type="button" onClick={() => handleAssign(parseInt(place), "?", true)} style={{ backgroundColor: '#a63' }}>Insert Placeholder</button>
                 </form>
             </div>
 
             <div className="card">
-                <table>
-                    <thead><tr><th>Place</th><th>Bib</th><th>Participant</th><th style={{ textAlign: 'right' }}>Tools</th></tr></thead>
+                <table ref={tableRef} style={{ width: '100%', textAlign: 'left', borderCollapse: 'collapse' }}>
+                    <thead>
+                        <tr style={{ borderBottom: '2px solid #555' }}>
+                            <th>Place</th><th>Bib #</th><th>Participant</th><th style={{ textAlign: 'right' }}>Sequence Tools</th>
+                        </tr>
+                    </thead>
                     <tbody>
                         {tableRows.map((row) => {
                             const p = row.data;
                             const part = p ? participants.find(reg => reg.bib_number === p.bib_number) : null;
+                            const isTargeted = place === row.index.toString();
+                            
                             if (!p) {
                                 return (
-                                    <tr key={row.index} style={{ backgroundColor: '#322' }}>
-                                        <td>{row.index}</td><td colSpan={2} style={{ color: 'var(--danger)' }}>GAP</td>
-                                        <td style={{ textAlign: 'right' }}><button onClick={() => handleAssign(row.index, "?", true)} style={{ padding: '2px 5px' }}>Fill</button></td>
+                                    <tr 
+                                        key={row.index} 
+                                        onClick={(e) => { e.stopPropagation(); setPlace(row.index.toString()); }}
+                                        style={{ backgroundColor: isTargeted ? '#442' : '#322', borderBottom: '1px solid #444', cursor: 'pointer' }}
+                                    >
+                                        <td style={{ padding: '8px 0', color: '#f88' }}>{isTargeted ? '👉 ' : ''}{row.index}</td>
+                                        <td colSpan={2} style={{ color: '#f88' }}><em>--- EMPTY GAP ---</em></td>
+                                        <td style={{ textAlign: 'right' }}>
+                                            <button onClick={(e) => { e.stopPropagation(); handleAssign(row.index, "?", true); }} style={{ padding: '2px 5px', fontSize: '0.7em' }}>Fill Placeholder</button>
+                                        </td>
                                     </tr>
                                 );
                             }
+
                             return (
-                                <tr key={p.place}>
-                                    <td>{p.place}</td>
+                                <tr 
+                                    key={p.place} 
+                                    onClick={(e) => { e.stopPropagation(); setPlace(p.place.toString()); }}
+                                    style={{ 
+                                        borderBottom: '1px solid #444', 
+                                        backgroundColor: isTargeted ? '#2c3e50' : (p.bib_number === "?" ? "#333" : "transparent"),
+                                        cursor: 'pointer'
+                                    }}
+                                >
+                                    <td style={{ padding: '8px 0' }}>{isTargeted ? '👉 ' : ''}{p.place}</td>
                                     <td>
-                                        <input defaultValue={p.bib_number} onBlur={(e) => { if (e.target.value !== p.bib_number) handleAssign(p.place, e.target.value); }} style={{ width: '60px' }} />
+                                        <input 
+                                            key={`${p.place}-${p.bib_number}`}
+                                            defaultValue={p.bib_number} 
+                                            onClick={(e) => e.stopPropagation()}
+                                            onBlur={(e) => {
+                                                if (e.target.value && e.target.value !== p.bib_number) handleAssign(p.place, e.target.value);
+                                            }} 
+                                            style={{ width: '60px', color: p.bib_number === "?" ? "#f63" : "inherit", fontWeight: p.bib_number === "?" ? "bold" : "normal" }}
+                                        />
                                     </td>
-                                    <td>{p.bib_number === "?" ? "Placeholder" : (part ? `${part.first_name} ${part.last_name}` : "Unknown")}</td>
+                                    <td>
+                                        {p.bib_number === "?" ? <em style={{color: '#f63'}}>Placeholder Card</em> : 
+                                         part ? `${part.first_name} ${part.last_name}` : <span style={{color: '#f33'}}>Unregistered Bib</span>}
+                                    </td>
                                     <td style={{ textAlign: 'right' }}>
-                                        <button onClick={() => handleShift(p.place, 1)} style={{ backgroundColor: '#444', marginRight: '2px' }}>↓</button>
-                                        <button onClick={() => handleShift(p.place, -1)} style={{ backgroundColor: '#444', marginRight: '2px' }}>↑</button>
-                                        <button onClick={() => handleDelete(p.place)} style={{ backgroundColor: 'var(--danger)' }}>×</button>
+                                        <button title="Shift Down" onClick={(e) => { e.stopPropagation(); handleShift(p.place, 1); }} style={{ backgroundColor: '#444', padding: '2px 8px', marginRight: '2px' }}>↓</button>
+                                        <button title="Shift Up" onClick={(e) => { e.stopPropagation(); handleShift(p.place, -1); }} style={{ backgroundColor: '#444', padding: '2px 8px', marginRight: '5px' }}>↑</button>
+                                        <button title="Delete" onClick={(e) => { e.stopPropagation(); handleDelete(p.place); }} style={{ backgroundColor: '#a33', padding: '2px 8px' }}>Del</button>
                                     </td>
                                 </tr>
                             );
                         })}
-                        <tr style={{ backgroundColor: '#ffffff05' }}>
-                            <td><input type="number" value={place} onChange={e => setPlace(e.target.value)} style={{ width: '60px' }} /></td>
-                            <td><input value={bib} onChange={e => setBib(e.target.value)} onKeyDown={e => e.key === 'Enter' && handleAssign(parseInt(place), bib)} style={{ width: '60px' }} /></td>
-                            <td colSpan={2}><button onClick={() => handleAssign(parseInt(place), bib)}>Add Row</button></td>
-                        </tr>
                     </tbody>
                 </table>
             </div>
         </div>
 
         {showUnassigned && (
-            <div style={{ flex: 1, position: 'sticky', top: '20px' }} className="card">
-                <h3>Unassigned</h3>
-                <input placeholder="Search..." value={search} onChange={e => setSearch(e.target.value)} style={{ width: '100%', marginBottom: '10px' }} />
+            <div ref={sidebarRef} style={{ flex: 1, position: 'sticky', top: '20px' }} className="card" onClick={e => e.stopPropagation()}>
+                <h3>Remaining Runners</h3>
+                <input 
+                    placeholder="Search..." 
+                    value={search} 
+                    onChange={e => setSearch(e.target.value)} 
+                    style={{ width: '100%', padding: '8px', marginBottom: '10px' }}
+                />
                 <div style={{ maxHeight: 'calc(100vh - 250px)', overflowY: 'auto' }}>
                     {filteredUnassigned.map(p => (
-                        <div key={p.id} onClick={() => setBib(p.bib_number)} style={{ padding: '8px', borderBottom: '1px solid var(--border)', cursor: 'pointer' }}>
-                            <strong>{p.bib_number}</strong>: {p.first_name}
+                        <div key={p.id} 
+                             tabIndex={0}
+                             onClick={(e) => { e.stopPropagation(); selectFromLookup(p.bib_number); }}
+                             onKeyDown={(e) => {
+                                 if (e.key === 'Enter') {
+                                     handleAssign(parseInt(place), p.bib_number);
+                                 }
+                             }}
+                             style={{ padding: '8px', borderBottom: '1px solid #333', cursor: 'pointer', fontSize: '0.9em', outline: 'none' }}
+                             className="hover-row">
+                            <strong>{p.bib_number}</strong>: {p.first_name} {p.last_name}
                         </div>
                     ))}
                 </div>

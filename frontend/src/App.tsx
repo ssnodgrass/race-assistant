@@ -1,8 +1,8 @@
-import React, { useState, useEffect, useRef } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { Events } from "@wailsio/runtime";
 
 // Named imports from bindings
-import { RaceService, EventService, ParticipantService, TimingService } from "../bindings/github.com/ssnodgrass/race-assistant/services";
+import { RaceService, EventService, ParticipantService } from "../bindings/github.com/ssnodgrass/race-assistant/services";
 import { Race, Event, Participant } from "../bindings/github.com/ssnodgrass/race-assistant/models";
 import { DatabaseService } from "../bindings/github.com/ssnodgrass/race-assistant";
 
