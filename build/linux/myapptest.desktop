@@ -1,0 +1,10 @@
+[Desktop Entry]
+Type=Application
+Name=myapptest
+Exec=myapptest
+Icon=myapptest
+Categories=Development;
+Terminal=false
+Keywords=wails
+Version=1.0
+StartupNotify=false
