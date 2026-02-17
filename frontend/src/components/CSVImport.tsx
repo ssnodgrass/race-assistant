@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
 import { ParticipantService } from '../../bindings/github.com/ssnodgrass/race-assistant/services';
+import { DatabaseService } from '../../bindings/github.com/ssnodgrass/race-assistant';
 import { Event as RaceEvent } from '../../bindings/github.com/ssnodgrass/race-assistant/models';
 
 interface CSVImportProps {
@@ -17,7 +18,7 @@ export const CSVImport: React.FC<CSVImportProps> = ({ raceID, events, onComplete
   const [defaultEvent, setDefaultEvent] = useState(events[0]?.id || 0);
 
   const selectFile = () => {
-    (window as any).go.main.DatabaseService.GetFilePath("Select CSV to Import").then((path: string) => {
+    DatabaseService.GetFilePath("Select CSV to Import").then((path: string) => {
         if (!path) return;
         setFilePath(path);
         ParticipantService.GetCSVHeaders(path).then(setHeaders).catch(console.error);
