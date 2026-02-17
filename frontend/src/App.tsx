@@ -170,10 +170,9 @@ function App() {
                     {view === 'participants' && <ParticipantManagement raceID={selectedRace.id} events={events} participants={participants} onRefresh={() => loadRaceDetails(selectedRace.id)} onImport={() => setView('import_csv')} />}
                     {view === 'placements' && <PlacementEntry raceID={selectedRace.id} participants={participants} events={events} />}
                     {view === 'times' && <TimeEntry raceID={selectedRace.id} />}
-                    {view === 'awards' && <AwardsView events={events} />}
-                    {view === 'reporting' && <AwardsView events={events} />}
-                    
-                    {view === 'import_csv' && (
+                                {view === 'awards' && <AwardsView events={events} mode="awards" />}
+                                {view === 'reporting' && <AwardsView events={events} mode="standings" />}
+                                        {view === 'import_csv' && (
                         <CSVImport 
                             raceID={selectedRace.id} 
                             events={events} 

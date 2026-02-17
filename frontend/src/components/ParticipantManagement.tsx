@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
-import { ParticipantService } from '../../bindings/github.com/ssnodgrass/race-assistant/services';
+import { ParticipantService, ReportingService } from '../../bindings/github.com/ssnodgrass/race-assistant/services';
+import { DatabaseService } from '../../bindings/github.com/ssnodgrass/race-assistant';
 import { Participant, Event as RaceEvent } from '../../bindings/github.com/ssnodgrass/race-assistant/models';
 
 interface ParticipantManagementProps {
@@ -58,6 +59,15 @@ export const ParticipantManagement: React.FC<ParticipantManagementProps> = ({ ra
     }
   };
 
+  const handlePrintLabels = () => {
+    DatabaseService.GetSavePath("Save Bib Labels PDF", "Bib_Labels.pdf").then((path: string) => {
+        if (!path) return;
+        ReportingService.GenerateBibLabels(raceID, path)
+            .then(() => alert("Labels Generated Successfully"))
+            .catch(err => alert("Failed to generate labels: " + err));
+    });
+  };
+
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     const dobValue = form.dob ? new Date(form.dob).toISOString() : null;
@@ -95,6 +105,7 @@ export const ParticipantManagement: React.FC<ParticipantManagementProps> = ({ ra
                 {isAdding ? 'Cancel' : 'Add Participant'}
             </button>
             <button onClick={onImport} style={{ backgroundColor: '#444' }}>Import from CSV...</button>
+            <button onClick={handlePrintLabels} style={{ backgroundColor: 'var(--success)' }}>Print Bib Labels</button>
         </div>
       </div>
 

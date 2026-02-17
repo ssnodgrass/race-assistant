@@ -87,6 +87,15 @@ func (s *DatabaseService) GetFilePath(title string) string {
 	result, _ := s.app.Dialog.OpenFile().
 		SetTitle(title).
 		AddFilter("CSV Files (*.csv)", "*.csv").
+		AddFilter("Text Files (*.txt)", "*.txt").
+		PromptForSingleSelection()
+	return result
+}
+
+func (s *DatabaseService) GetSavePath(title string, defaultName string) string {
+	result, _ := s.app.Dialog.SaveFile().
+		SetFilename(fmt.Sprintf("%s.pdf", title)).
+		AddFilter("PDF Files (*.pdf)", "*.pdf").
 		PromptForSingleSelection()
 	return result
 }
@@ -102,6 +111,7 @@ func main() {
 	participantService := services.NewParticipantService(participantRepo)
 	timingService := services.NewTimingService(timingRepo, eventRepo)
 	awardService := services.NewAwardService(eventRepo, timingRepo)
+	reportingService := services.NewReportingService(raceRepo, eventRepo, participantRepo, timingRepo, awardService, timingService)
 
 	dbService := &DatabaseService{
 		services: []serviceWithDB{
@@ -110,6 +120,7 @@ func main() {
 			participantService,
 			timingService,
 			awardService,
+			reportingService,
 		},
 	}
 
@@ -122,6 +133,7 @@ func main() {
 			application.NewService(participantService),
 			application.NewService(timingService),
 			application.NewService(awardService),
+			application.NewService(reportingService),
 			application.NewService(dbService),
 		},
 		Assets: application.AssetOptions{
@@ -155,7 +167,7 @@ func main() {
 
 	partMenu := menu.AddSubmenu("Participants")
 	partMenu.Add("Registration").OnClick(func(ctx *application.Context) { app.Event.Emit("menu:view-participants", nil) })
-	partMenu.Add("Import from RunSignUp...").OnClick(func(ctx *application.Context) { app.Event.Emit("menu:import-participants", nil) })
+	partMenu.Add("Import from CSV...").OnClick(func(ctx *application.Context) { app.Event.Emit("menu:import-participants", nil) })
 
 	dataMenu := menu.AddSubmenu("Data Entry")
 	dataMenu.Add("Enter Placements").OnClick(func(ctx *application.Context) { app.Event.Emit("menu:enter-placements", nil) })
