@@ -4,7 +4,7 @@ import { Events } from "@wailsio/runtime";
 // Named imports from bindings
 import { RaceService, EventService, ParticipantService } from "../bindings/github.com/ssnodgrass/race-assistant/services";
 import { Race, Event, Participant } from "../bindings/github.com/ssnodgrass/race-assistant/models";
-import { DatabaseService as DBStatic } from "../bindings/github.com/ssnodgrass/race-assistant";
+import { DatabaseService } from "../bindings/github.com/ssnodgrass/race-assistant";
 
 // Components
 import { RaceList } from './components/RaceList';
@@ -32,72 +32,65 @@ function App() {
   const [events, setEvents] = useState<Event[]>([]);
   const [participants, setParticipants] = useState<Participant[]>([]);
   const [isExternalDisplay, setIsExternalDisplay] = useState(false);
-  const [externalMode, setExternalMode] = useState<'live_display' | 'awards' | 'reporting'>('live_display');
+  const [, setExternalMode] = useState<'live_display' | 'awards' | 'reporting'>('live_display');
+  const isBrowserMode = !(window as any).wails;
 
   const selectedRaceRef = useRef<Race | null>(null);
-  const eventsRef = useRef<Event[]>([]);
-
   useEffect(() => { selectedRaceRef.current = selectedRace; }, [selectedRace]);
-  useEffect(() => { eventsRef.current = events; }, [events]);
+
+  const checkBackendStatus = () => {
+    const isWeb = !(window as any).wails;
+    const statusCall = isWeb 
+        ? fetch("/api/status").then(r => r.json()).then(d => d.dbPath)
+        : DatabaseService.GetStatus();
+
+    statusCall.then(path => {
+        if (path) {
+            const isNewPath = path !== dbPath;
+            if (isNewPath) setDbPath(path);
+            
+            if (isNewPath || races.length === 0) {
+                loadRaces().then(list => {
+                    const params = new URLSearchParams(window.location.search);
+                    const raceIDParam = params.get('raceID');
+                    if (raceIDParam) {
+                        const target = list?.find((r: any) => r.id === parseInt(raceIDParam));
+                        if (target) setSelectedRace(target);
+                    } else if (list && list.length > 0 && (window.location.search.includes('view') || !selectedRaceRef.current)) {
+                        setSelectedRace(list[0]);
+                    }
+                });
+            }
+        }
+    }).catch(() => {});
+  };
 
   useEffect(() => {
-    // Check for external display mode in URL
+    checkBackendStatus();
+    const heartbeat = setInterval(checkBackendStatus, 3000);
+
     const params = new URLSearchParams(window.location.search);
     const viewParam = params.get('view');
-    const raceIDParam = params.get('raceID');
-
-    if (viewParam === 'live_display' || viewParam === 'awards' || viewParam === 'reporting') {
+    if (viewParam) {
         setIsExternalDisplay(true);
         setExternalMode(viewParam as any);
         setView(viewParam as View);
-        
-        loadRaces().then(list => {
-            if (raceIDParam && list) {
-                const target = list.find(r => r.id === parseInt(raceIDParam));
-                if (target) setSelectedRace(target);
-            } else if (list && list.length > 0) {
-                setSelectedRace(list[0]);
-            }
-        });
     }
 
-    const unsubDB = Events.On('db:connected', (e) => {
-      setDbPath(e.data as string);
-      loadRaces();
-      if (!isExternalDisplay) {
-        setView('list');
-        setSelectedRace(null);
-      }
-    });
+    let unsubs: (() => void)[] = [];
+    if (!isBrowserMode) {
+        const u1 = Events.On('db:connected', (e) => {
+            setDbPath(e.data as string); loadRaces(); 
+            if (window.location.search === "") { setView('list'); setSelectedRace(null); }
+        });
+        const u2 = Events.On('db:closed', () => {
+            setDbPath(''); setRaces([]); setSelectedRace(null); setView('list');
+        });
+        unsubs = [u1, u2];
+    }
 
-    const unsubDBClose = Events.On('db:closed', () => {
-        setDbPath(''); setRaces([]); setSelectedRace(null); setView('list');
-    });
-
-    const menuEvents: { name: string, view: View }[] = [
-      { name: 'menu:new-race', view: 'create_race' },
-      { name: 'menu:view-races', view: 'list' },
-      { name: 'menu:manage-events', view: 'manage_events' },
-      { name: 'menu:award-config', view: 'award_config' },
-      { name: 'menu:view-participants', view: 'participants' },
-      { name: 'menu:enter-placements', view: 'placements' },
-      { name: 'menu:enter-times', view: 'times' },
-      { name: 'menu:view-awards', view: 'awards' },
-      { name: 'menu:view-reporting', view: 'reporting' },
-      { name: 'menu:import-participants', view: 'import_csv' },
-      { name: 'menu:import-placements', view: 'placements' },
-    ];
-
-    const unsubs = menuEvents.map(me => Events.On(me.name, () => {
-      if (me.view === 'list' || me.view === 'create_race') {
-        setSelectedRace(null); setView(me.view); return;
-      }
-      const currentRace = selectedRaceRef.current;
-      if (currentRace) setView(me.view);
-    }));
-
-    return () => { unsubDB(); unsubDBClose(); unsubs.forEach(u => u()); };
-  }, []);
+    return () => { unsubs.forEach(u => u()); clearInterval(heartbeat); };
+  }, [dbPath, races.length, isBrowserMode]);
 
   useEffect(() => {
     if (selectedRace) loadRaceDetails(selectedRace.id);
@@ -105,23 +98,32 @@ function App() {
 
   const loadRaces = async () => {
     try {
-        const list = await RaceService.ListRaces();
+        const list = isBrowserMode 
+            ? await fetch("/api/races").then(r => r.json())
+            : await RaceService.ListRaces();
         setRaces(list || []);
         return list;
-    } catch (e) { console.error(e); return []; }
+    } catch (e) { return []; }
   };
 
-  const refreshActiveRace = () => {
+  const refreshActiveRace = async () => {
     if (!selectedRace) return;
-    RaceService.ListRaces().then(list => {
-        const updated = list?.find(r => r.id === selectedRace.id);
-        if (updated) setSelectedRace(updated);
-    });
+    const list = await loadRaces();
+    const updated = list?.find((r: any) => r.id === selectedRace.id);
+    if (updated) setSelectedRace(updated);
   };
 
-  const loadRaceDetails = (id: number) => {
-    EventService.ListEvents(id).then(evs => setEvents(evs || [])).catch(console.error);
-    ParticipantService.ListParticipants(id).then(pts => setParticipants(pts || [])).catch(console.error);
+  const loadRaceDetails = async (id: number) => {
+    try {
+        const evs = isBrowserMode 
+            ? await fetch(`/api/events?raceID=${id}`).then(r => r.json())
+            : await EventService.ListEvents(id);
+        setEvents(evs || []);
+        
+        if (!isBrowserMode) {
+            ParticipantService.ListParticipants(id).then(pts => setParticipants(pts || [])).catch(console.error);
+        }
+    } catch (e) { console.error(e); }
   };
 
   const NavItem = ({ label, target, icon }: { label: string, target: View, icon: string }) => (
@@ -130,18 +132,38 @@ function App() {
     </div>
   );
 
-  if (isExternalDisplay) {
+  if (isExternalDisplay || isBrowserMode) {
     return (
         <div style={{ padding: '40px', backgroundColor: '#000', minHeight: '100vh', color: 'white' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '30px', borderBottom: '1px solid #222', paddingBottom: '20px' }}>
+                <div style={{ display: 'flex', gap: '20px', alignItems: 'center' }}>
+                    <h2 style={{ margin: 0, color: 'var(--accent)' }}>Race Hub</h2>
+                    <select value={selectedRace?.id || ''} onChange={e => {
+                        const r = races.find(it => it.id === parseInt(e.target.value));
+                        if (r) setSelectedRace(r);
+                    }} style={{ padding: '8px', fontSize: '1.1em' }}>
+                        <option value="">-- Select Race --</option>
+                        {races.map(r => <option key={r.id} value={r.id}>{r.name}</option>)}
+                    </select>
+                </div>
+                <div style={{ display: 'flex', gap: '10px' }}>
+                    <button onClick={() => setView('live_display')} style={{ backgroundColor: view === 'live_display' ? 'var(--accent)' : '#222' }}>Live Board</button>
+                    <button onClick={() => setView('awards')} style={{ backgroundColor: view === 'awards' ? 'var(--accent)' : '#222' }}>Awards</button>
+                    <button onClick={() => setView('reporting')} style={{ backgroundColor: view === 'reporting' ? 'var(--accent)' : '#222' }}>Standings</button>
+                </div>
+            </div>
+
             {selectedRace ? (
-                <>
-                    {externalMode === 'live_display' && <LiveResults events={events} selectedRace={selectedRace} onRefresh={refreshActiveRace} />}
-                    {externalMode === 'awards' && <AwardsView events={events} mode="awards" isExternal={true} />}
-                    {externalMode === 'reporting' && <AwardsView events={events} mode="standings" isExternal={true} />}
-                </>
+                <div className="view-container">
+                    {view === 'live_display' && <LiveResults events={events} selectedRace={selectedRace} onRefresh={refreshActiveRace} isBrowser={isBrowserMode} />}
+                    {view === 'awards' && <AwardsView events={events} mode="awards" isExternal={true} isBrowser={isBrowserMode} />}
+                    {view === 'reporting' && <AwardsView events={events} mode="standings" isExternal={true} isBrowser={isBrowserMode} />}
+                    {view !== 'live_display' && view !== 'awards' && view !== 'reporting' && <LiveResults events={events} selectedRace={selectedRace} onRefresh={refreshActiveRace} isBrowser={isBrowserMode} />}
+                </div>
             ) : (
                 <div style={{ textAlign: 'center', paddingTop: '100px' }}>
-                    <h1>Waiting for Race Data...</h1>
+                    <h1>Race Results Hub</h1>
+                    <p style={{ color: '#666' }}>Waiting for the race host to select a race...</p>
                 </div>
             )}
         </div>
@@ -176,10 +198,10 @@ function App() {
                             <NavItem label="Full Reporting" target="reporting" icon="📄" />
                             <NavItem label="Live Display" target="live_display" icon="📺" />
                             <div className="sidebar-divider">External</div>
-                            <div className="nav-item" onClick={() => DBStatic.OpenExternalWindow('live_display', selectedRace.id)} style={{ color: 'var(--success)' }}>
+                            <div className="nav-item" onClick={() => DatabaseService.OpenExternalWindow('live_display', selectedRace.id)} style={{ color: 'var(--success)' }}>
                                 🖥️ Launch Live Board
                             </div>
-                            <div className="nav-item" onClick={() => DBStatic.OpenExternalWindow('reporting', selectedRace.id)} style={{ color: 'var(--success)' }}>
+                            <div className="nav-item" onClick={() => DatabaseService.OpenExternalWindow('reporting', selectedRace.id)} style={{ color: 'var(--success)' }}>
                                 🖥️ Launch Results TV
                             </div>
                         </>
@@ -190,7 +212,7 @@ function App() {
             )}
         </nav>
         <div className="sidebar-footer">
-            {dbPath && <button onClick={() => DBStatic.Close()} style={{ width: '100%', backgroundColor: '#444' }}>Close Database</button>}
+            {dbPath && <button onClick={() => DatabaseService.Close()} style={{ width: '100%', backgroundColor: '#444' }}>Close Database</button>}
         </div>
       </aside>
 
@@ -200,8 +222,8 @@ function App() {
                 <h1>Welcome to Race Assistant</h1>
                 <p>Start by creating a new database or opening an existing one.</p>
                 <div style={{ display: 'flex', gap: '20px', marginTop: '20px' }}>
-                    <button style={{ padding: '15px 30px', fontSize: '1.1em' }} onClick={() => DBStatic.New()}>Create New Database</button>
-                    <button style={{ padding: '15px 30px', fontSize: '1.1em', backgroundColor: '#444' }} onClick={() => DBStatic.Open()}>Open Database</button>
+                    <button style={{ padding: '15px 30px', fontSize: '1.1em' }} onClick={() => DatabaseService.New()}>Create New Database</button>
+                    <button style={{ padding: '15px 30px', fontSize: '1.1em', backgroundColor: '#444' }} onClick={() => DatabaseService.Open()}>Open Database</button>
                 </div>
             </div>
         ) : (

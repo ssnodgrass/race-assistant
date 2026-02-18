@@ -8,9 +8,10 @@ interface AwardsViewProps {
   events: RaceEvent[];
   mode?: 'awards' | 'standings';
   isExternal?: boolean;
+  isBrowser?: boolean;
 }
 
-export const AwardsView: React.FC<AwardsViewProps> = ({ events, mode = 'awards', isExternal = false }) => {
+export const AwardsView: React.FC<AwardsViewProps> = ({ events, mode = 'awards', isExternal = false, isBrowser = false }) => {
   const [selectedID, setSelectedID] = useState<number>(0);
   const [categories, setCategories] = useState<AwardCategory[]>([]);
   const [fullResults, setFullResults] = useState<Result[]>([]);
@@ -48,9 +49,19 @@ export const AwardsView: React.FC<AwardsViewProps> = ({ events, mode = 'awards',
     }
   }, [isExternal, showFull, fullResults]);
 
-  const loadData = () => {
-    AwardService.GetAwards(selectedID).then(setCategories).catch(console.error);
-    TimingService.GetEventResults(selectedID).then(setFullResults).catch(console.error);
+  const loadData = async () => {
+    if (isBrowser) {
+        try {
+            const awardsRes = await fetch(`/api/awards?eventID=${selectedID}`);
+            setCategories(await awardsRes.json());
+            
+            const resultsRes = await fetch(`/api/results?eventID=${selectedID}`);
+            setFullResults(await resultsRes.json());
+        } catch (e) { console.error(e); }
+    } else {
+        AwardService.GetAwards(selectedID).then(setCategories).catch(console.error);
+        TimingService.GetEventResults(selectedID).then(setFullResults).catch(console.error);
+    }
   };
 
   const handleDownloadPDF = () => {
@@ -94,7 +105,7 @@ export const AwardsView: React.FC<AwardsViewProps> = ({ events, mode = 'awards',
                 <option value="awards">Category Winners</option>
                 <option value="standings">Complete List</option>
             </select>
-            {!isExternal && (
+            {!isBrowser && !isExternal && (
                 <button onClick={handleDownloadPDF} style={{ backgroundColor: 'var(--success)' }}>
                     Export PDF
                 </button>
@@ -126,7 +137,7 @@ export const AwardsView: React.FC<AwardsViewProps> = ({ events, mode = 'awards',
             </div>
         ) : (
             <div className="card" style={{ backgroundColor: isExternal ? '#0a0a0a' : 'var(--bg-card)', padding: isExternal ? '0' : '20px' }}>
-                <table style={{ width: '100%', textAlign: 'left', borderCollapse: 'collapse', fontSize: isExternal ? '1.6em' : '1em' }}>
+                <table style={{ width: '100%', textAlign: 'left', borderCollapse: 'collapse', fontSize: isExternal ? '1.4em' : '1em' }}>
                     <thead style={{ position: 'sticky', top: 0, backgroundColor: isExternal ? '#111' : 'var(--bg-input)', zIndex: 10 }}>
                         <tr style={{ borderBottom: '2px solid var(--border)' }}>
                             <th style={{ padding: '15px' }}>Plc</th><th>Bib</th><th>Name</th><th>G</th><th>Age</th><th style={{ textAlign: 'right' }}>Time</th>

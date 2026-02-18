@@ -7,16 +7,17 @@ interface LiveResultsProps {
   events: RaceEvent[];
   selectedRace?: Race | null;
   onRefresh?: () => void;
+  isBrowser?: boolean;
 }
 
-export const LiveResults: React.FC<LiveResultsProps> = ({ events, selectedRace, onRefresh }) => {
+export const LiveResults: React.FC<LiveResultsProps> = ({ events, selectedRace, onRefresh, isBrowser = false }) => {
   const [selectedID, setSelectedID] = useState<number>(0);
   const [categories, setCategories] = useState<AwardCategory[]>([]);
   const [lastFinishers, setLastFinishers] = useState<Result[]>([]);
   const [elapsed, setElapsed] = useState('00:00:00');
 
   useEffect(() => {
-    if (events.length > 0 && selectedID === 0) {
+    if (events.length > 0 && (selectedID === 0 || !events.some(e => e.id === selectedID))) {
         setSelectedID(events[0].id);
     }
   }, [events]);
@@ -29,6 +30,7 @@ export const LiveResults: React.FC<LiveResultsProps> = ({ events, selectedRace, 
     }
   }, [selectedID]);
 
+  // Main Race Clock
   useEffect(() => {
     if (!selectedRace?.start_time) {
         setElapsed('00:00:00');
@@ -49,13 +51,26 @@ export const LiveResults: React.FC<LiveResultsProps> = ({ events, selectedRace, 
     return () => clearInterval(timer);
   }, [selectedRace?.start_time]);
 
-  const loadData = () => {
+  const loadData = async () => {
     if (onRefresh) onRefresh();
-    AwardService.GetAwards(selectedID).then(setCategories).catch(console.error);
-    TimingService.GetEventResults(selectedID).then(data => {
-        const latest = [...(data || [])].sort((a, b) => b.chute_place - a.chute_place);
-        setLastFinishers(latest.slice(0, 10));
-    }).catch(console.error);
+
+    if (isBrowser) {
+        try {
+            const awardsRes = await fetch(`/api/awards?eventID=${selectedID}`);
+            setCategories(await awardsRes.json());
+            
+            const resultsRes = await fetch(`/api/results?eventID=${selectedID}`);
+            const data = await resultsRes.json();
+            const latest = [...(data || [])].sort((a, b) => b.chute_place - a.chute_place);
+            setLastFinishers(latest.slice(0, 10));
+        } catch (e) { console.error(e); }
+    } else {
+        AwardService.GetAwards(selectedID).then(setCategories).catch(console.error);
+        TimingService.GetEventResults(selectedID).then(data => {
+            const latest = [...(data || [])].sort((a, b) => b.chute_place - a.chute_place);
+            setLastFinishers(latest.slice(0, 10));
+        }).catch(console.error);
+    }
   };
 
   const getDisplayTime = (r: Result) => {

@@ -3,9 +3,13 @@ package main
 import (
 	"database/sql"
 	"embed"
+	"encoding/json"
 	"fmt"
+	"io/fs"
 	"log"
+	"net/http"
 	"os"
+	"strconv"
 
 	"github.com/ssnodgrass/race-assistant/database"
 	"github.com/ssnodgrass/race-assistant/internal/repository"
@@ -19,6 +23,7 @@ var assets embed.FS
 type DatabaseService struct {
 	app       *application.App
 	currentDB *sql.DB
+	dbPath    string
 	services  []serviceWithDB
 }
 
@@ -26,8 +31,11 @@ type serviceWithDB interface {
 	SetDB(db *sql.DB)
 }
 
+func (s *DatabaseService) GetStatus() string {
+	return s.dbPath
+}
+
 func (s *DatabaseService) New() {
-	log.Println("[Action] New Database")
 	result, err := s.app.Dialog.OpenFile().
 		SetTitle("Create New Database").
 		AddFilter("Database Files (*.db)", "*.db").
@@ -40,7 +48,6 @@ func (s *DatabaseService) New() {
 }
 
 func (s *DatabaseService) Open() {
-	log.Println("[Action] Open Database")
 	result, err := s.app.Dialog.OpenFile().
 		SetTitle("Open Database").
 		AddFilter("Database Files (*.db)", "*.db").
@@ -53,11 +60,11 @@ func (s *DatabaseService) Open() {
 }
 
 func (s *DatabaseService) Close() {
-	log.Println("[Action] Close Database")
 	if s.currentDB != nil {
 		s.currentDB.Close()
 		s.currentDB = nil
 	}
+	s.dbPath = ""
 	for _, service := range s.services {
 		service.SetDB(nil)
 	}
@@ -66,12 +73,11 @@ func (s *DatabaseService) Close() {
 
 func (s *DatabaseService) OpenExternalWindow(view string, raceID int) {
 	log.Printf("[Action] Opening External Window (%s) for Race %d\n", view, raceID)
-	// On Linux, secondary windows often crash if they try to inherit the app menu.
-	// We use a clean window without the application menu for external displays.
+	// We create a window with NO reference to the main menu to prevent Linux GTK crashes
 	s.app.Window.NewWithOptions(application.WebviewWindowOptions{
-		Title: "Race Assistant - " + view,
-		URL:   fmt.Sprintf("/?view=%s&raceID=%d", view, raceID),
-		Width: 1024,
+		Title:  "Race Assistant Display",
+		URL:    fmt.Sprintf("/?view=%s&raceID=%d", view, raceID),
+		Width:  1024,
 		Height: 768,
 	})
 }
@@ -89,6 +95,7 @@ func (s *DatabaseService) connectTo(path string) {
 	}
 
 	s.currentDB = db
+	s.dbPath = path
 	for _, service := range s.services {
 		service.SetDB(db)
 	}
@@ -96,19 +103,12 @@ func (s *DatabaseService) connectTo(path string) {
 }
 
 func (s *DatabaseService) GetFilePath(title string) string {
-	result, _ := s.app.Dialog.OpenFile().
-		SetTitle(title).
-		AddFilter("CSV Files (*.csv)", "*.csv").
-		AddFilter("Text Files (*.txt)", "*.txt").
-		PromptForSingleSelection()
+	result, _ := s.app.Dialog.OpenFile().SetTitle(title).PromptForSingleSelection()
 	return result
 }
 
 func (s *DatabaseService) GetSavePath(title string, defaultName string) string {
-	result, _ := s.app.Dialog.OpenFile().
-		SetTitle(title).
-		AddFilter("PDF Files (*.pdf)", "*.pdf").
-		PromptForSingleSelection()
+	result, _ := s.app.Dialog.OpenFile().SetTitle(title).PromptForSingleSelection()
 	return result
 }
 
@@ -138,6 +138,42 @@ func main() {
 		},
 	}
 
+	frontendFS, _ := fs.Sub(assets, "frontend/dist")
+
+	go func() {
+		mux := http.NewServeMux()
+		mux.Handle("/", http.FileServer(http.FS(frontendFS)))
+		mux.HandleFunc("/api/status", func(w http.ResponseWriter, r *http.Request) {
+			w.Header().Set("Content-Type", "application/json")
+			json.NewEncoder(w).Encode(map[string]string{"dbPath": dbService.dbPath})
+		})
+		mux.HandleFunc("/api/races", func(w http.ResponseWriter, r *http.Request) {
+			w.Header().Set("Content-Type", "application/json")
+			list, _ := raceService.ListRaces()
+			json.NewEncoder(w).Encode(list)
+		})
+		mux.HandleFunc("/api/events", func(w http.ResponseWriter, r *http.Request) {
+			w.Header().Set("Content-Type", "application/json")
+			raceID, _ := strconv.Atoi(r.URL.Query().Get("raceID"))
+			list, _ := eventService.ListEvents(raceID)
+			json.NewEncoder(w).Encode(list)
+		})
+		mux.HandleFunc("/api/awards", func(w http.ResponseWriter, r *http.Request) {
+			w.Header().Set("Content-Type", "application/json")
+			eventID, _ := strconv.Atoi(r.URL.Query().Get("eventID"))
+			list, _ := awardService.GetAwards(eventID)
+			json.NewEncoder(w).Encode(list)
+		})
+		mux.HandleFunc("/api/results", func(w http.ResponseWriter, r *http.Request) {
+			w.Header().Set("Content-Type", "application/json")
+			eventID, _ := strconv.Atoi(r.URL.Query().Get("eventID"))
+			list, _ := timingService.GetEventResults(eventID)
+			json.NewEncoder(w).Encode(list)
+		})
+		log.Println("Web Hub Server started on :8080")
+		http.ListenAndServe(":8080", mux)
+	}()
+
 	app := application.New(application.Options{
 		Name:        "Race Assistant",
 		Description: "Road Race Registration and Timing System",
@@ -152,16 +188,14 @@ func main() {
 			application.NewService(dbService),
 		},
 		Assets: application.AssetOptions{
-			Handler: application.AssetFileServerFS(assets),
+			Handler: application.AssetFileServerFS(frontendFS),
 		},
 	})
 
 	dbService.app = app
 	stopwatchService.SetApp(app)
 
-	// Auto-open race_assistant.db if it exists
 	if _, err := os.Stat("race_assistant.db"); err == nil {
-		log.Println("Auto-opening race_assistant.db")
 		dbService.connectTo("race_assistant.db")
 	}
 
