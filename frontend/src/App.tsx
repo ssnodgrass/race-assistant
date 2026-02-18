@@ -4,7 +4,7 @@ import { Events } from "@wailsio/runtime";
 // Named imports from bindings
 import { RaceService, EventService, ParticipantService } from "../bindings/github.com/ssnodgrass/race-assistant/services";
 import { Race, Event, Participant } from "../bindings/github.com/ssnodgrass/race-assistant/models";
-import { DatabaseService } from "../bindings/github.com/ssnodgrass/race-assistant";
+import { DatabaseService as DBStatic } from "../bindings/github.com/ssnodgrass/race-assistant";
 
 // Components
 import { RaceList } from './components/RaceList';
@@ -17,10 +17,12 @@ import { PlacementEntry } from './components/PlacementEntry';
 import { TimeEntry } from './components/TimeEntry';
 import { AwardsView } from './components/AwardsView';
 import { CSVImport } from './components/CSVImport';
+import { StopwatchImport } from './components/StopwatchImport';
+import { LiveResults } from './components/LiveResults';
 
 import './index.css';
 
-type View = 'list' | 'race_detail' | 'create_race' | 'manage_events' | 'award_config' | 'participants' | 'placements' | 'times' | 'awards' | 'reporting' | 'import_csv';
+type View = 'list' | 'race_detail' | 'create_race' | 'manage_events' | 'award_config' | 'participants' | 'placements' | 'times' | 'awards' | 'reporting' | 'import_csv' | 'stopwatch' | 'live_display';
 
 function App() {
   const [dbPath, setDbPath] = useState<string>('');
@@ -29,6 +31,8 @@ function App() {
   const [selectedRace, setSelectedRace] = useState<Race | null>(null);
   const [events, setEvents] = useState<Event[]>([]);
   const [participants, setParticipants] = useState<Participant[]>([]);
+  const [isExternalDisplay, setIsExternalDisplay] = useState(false);
+  const [externalMode, setExternalMode] = useState<'live_display' | 'awards' | 'reporting'>('live_display');
 
   const selectedRaceRef = useRef<Race | null>(null);
   const eventsRef = useRef<Event[]>([]);
@@ -37,18 +41,37 @@ function App() {
   useEffect(() => { eventsRef.current = events; }, [events]);
 
   useEffect(() => {
+    // Check for external display mode in URL
+    const params = new URLSearchParams(window.location.search);
+    const viewParam = params.get('view');
+    const raceIDParam = params.get('raceID');
+
+    if (viewParam === 'live_display' || viewParam === 'awards' || viewParam === 'reporting') {
+        setIsExternalDisplay(true);
+        setExternalMode(viewParam as any);
+        setView(viewParam as View);
+        
+        loadRaces().then(list => {
+            if (raceIDParam && list) {
+                const target = list.find(r => r.id === parseInt(raceIDParam));
+                if (target) setSelectedRace(target);
+            } else if (list && list.length > 0) {
+                setSelectedRace(list[0]);
+            }
+        });
+    }
+
     const unsubDB = Events.On('db:connected', (e) => {
       setDbPath(e.data as string);
       loadRaces();
-      setView('list');
-      setSelectedRace(null);
+      if (!isExternalDisplay) {
+        setView('list');
+        setSelectedRace(null);
+      }
     });
 
     const unsubDBClose = Events.On('db:closed', () => {
-        setDbPath('');
-        setRaces([]);
-        setSelectedRace(null);
-        setView('list');
+        setDbPath(''); setRaces([]); setSelectedRace(null); setView('list');
     });
 
     const menuEvents: { name: string, view: View }[] = [
@@ -70,9 +93,7 @@ function App() {
         setSelectedRace(null); setView(me.view); return;
       }
       const currentRace = selectedRaceRef.current;
-      if (currentRace) {
-        setView(me.view);
-      }
+      if (currentRace) setView(me.view);
     }));
 
     return () => { unsubDB(); unsubDBClose(); unsubs.forEach(u => u()); };
@@ -82,7 +103,22 @@ function App() {
     if (selectedRace) loadRaceDetails(selectedRace.id);
   }, [selectedRace]);
 
-  const loadRaces = () => RaceService.ListRaces().then(setRaces).catch(console.error);
+  const loadRaces = async () => {
+    try {
+        const list = await RaceService.ListRaces();
+        setRaces(list || []);
+        return list;
+    } catch (e) { console.error(e); return []; }
+  };
+
+  const refreshActiveRace = () => {
+    if (!selectedRace) return;
+    RaceService.ListRaces().then(list => {
+        const updated = list?.find(r => r.id === selectedRace.id);
+        if (updated) setSelectedRace(updated);
+    });
+  };
+
   const loadRaceDetails = (id: number) => {
     EventService.ListEvents(id).then(evs => setEvents(evs || [])).catch(console.error);
     ParticipantService.ListParticipants(id).then(pts => setParticipants(pts || [])).catch(console.error);
@@ -93,6 +129,24 @@ function App() {
         <span>{icon}</span> {label}
     </div>
   );
+
+  if (isExternalDisplay) {
+    return (
+        <div style={{ padding: '40px', backgroundColor: '#000', minHeight: '100vh', color: 'white' }}>
+            {selectedRace ? (
+                <>
+                    {externalMode === 'live_display' && <LiveResults events={events} selectedRace={selectedRace} onRefresh={refreshActiveRace} />}
+                    {externalMode === 'awards' && <AwardsView events={events} mode="awards" isExternal={true} />}
+                    {externalMode === 'reporting' && <AwardsView events={events} mode="standings" isExternal={true} />}
+                </>
+            ) : (
+                <div style={{ textAlign: 'center', paddingTop: '100px' }}>
+                    <h1>Waiting for Race Data...</h1>
+                </div>
+            )}
+        </div>
+    );
+  }
 
   return (
     <div className="app-shell">
@@ -114,23 +168,29 @@ function App() {
                             <NavItem label="Events" target="manage_events" icon="📐" />
                             <NavItem label="Awards Config" target="award_config" icon="⚙️" />
                             <NavItem label="Participants" target="participants" icon="🏃" />
-                            
                             <div className="sidebar-divider">Entry & Results</div>
                             <NavItem label="Placements" target="placements" icon="🥇" />
-                            <NavItem label="Stopwatch Times" target="times" icon="⏱️" />
+                            <NavItem label="Stopwatch Import" target="stopwatch" icon="⏱️" />
+                            <NavItem label="Manual Times" target="times" icon="🖊️" />
                             <NavItem label="Process Awards" target="awards" icon="🏆" />
                             <NavItem label="Full Reporting" target="reporting" icon="📄" />
+                            <NavItem label="Live Display" target="live_display" icon="📺" />
+                            <div className="sidebar-divider">External</div>
+                            <div className="nav-item" onClick={() => DBStatic.OpenExternalWindow('live_display', selectedRace.id)} style={{ color: 'var(--success)' }}>
+                                🖥️ Launch Live Board
+                            </div>
+                            <div className="nav-item" onClick={() => DBStatic.OpenExternalWindow('reporting', selectedRace.id)} style={{ color: 'var(--success)' }}>
+                                🖥️ Launch Results TV
+                            </div>
                         </>
                     )}
                 </>
             ) : (
-                <div style={{ padding: '20px', color: 'var(--text-dim)', fontSize: '0.9em' }}>
-                    Open a database to begin.
-                </div>
+                <div style={{ padding: '20px', color: 'var(--text-dim)', fontSize: '0.9em' }}>Open a database to begin.</div>
             )}
         </nav>
         <div className="sidebar-footer">
-            {dbPath && <button onClick={() => DatabaseService.Close()} style={{ width: '100%', backgroundColor: '#444' }}>Close Database</button>}
+            {dbPath && <button onClick={() => DBStatic.Close()} style={{ width: '100%', backgroundColor: '#444' }}>Close Database</button>}
         </div>
       </aside>
 
@@ -140,58 +200,33 @@ function App() {
                 <h1>Welcome to Race Assistant</h1>
                 <p>Start by creating a new database or opening an existing one.</p>
                 <div style={{ display: 'flex', gap: '20px', marginTop: '20px' }}>
-                    <button style={{ padding: '15px 30px', fontSize: '1.1em' }} onClick={() => DatabaseService.New()}>Create New Database</button>
-                    <button style={{ padding: '15px 30px', fontSize: '1.1em', backgroundColor: '#444' }} onClick={() => DatabaseService.Open()}>Open Database</button>
+                    <button style={{ padding: '15px 30px', fontSize: '1.1em' }} onClick={() => DBStatic.New()}>Create New Database</button>
+                    <button style={{ padding: '15px 30px', fontSize: '1.1em', backgroundColor: '#444' }} onClick={() => DBStatic.Open()}>Open Database</button>
                 </div>
             </div>
         ) : (
             <>
                 {view === 'list' && (
-                <RaceList 
-                    races={races} 
-                    onSelectRace={(r) => { setSelectedRace(r); setView('race_detail'); }} 
-                    onRefresh={loadRaces}
-                    onCreateRace={() => setView('create_race')}
-                />
+                <RaceList races={races} onSelectRace={(r) => { setSelectedRace(r); setView('race_detail'); }} onRefresh={loadRaces} onCreateRace={() => setView('create_race')} />
                 )}
-
                 {view === 'create_race' && (
-                <CreateRace 
-                    onCreated={(r) => { setSelectedRace(r); setView('race_detail'); loadRaces(); }} 
-                    onCancel={() => setView('list')} 
-                />
+                <CreateRace onCreated={(r) => { setSelectedRace(r); setView('race_detail'); loadRaces(); }} onCancel={() => setView('list')} />
                 )}
-
                 {selectedRace && (
                 <div className="view-container">
-                    {view === 'race_detail' && <RaceDashboard race={selectedRace} events={events} participants={participants} />}
+                    {view === 'race_detail' && <RaceDashboard race={selectedRace} events={events} participants={participants} onRefresh={refreshActiveRace} />}
                     {view === 'manage_events' && <EventManagement raceID={selectedRace.id} events={events} onRefresh={() => loadRaceDetails(selectedRace.id)} />}
                     {view === 'award_config' && <AwardConfigView events={events} />}
                     {view === 'participants' && <ParticipantManagement raceID={selectedRace.id} events={events} participants={participants} onRefresh={() => loadRaceDetails(selectedRace.id)} onImport={() => setView('import_csv')} />}
-                    {view === 'placements' && <PlacementEntry raceID={selectedRace.id} participants={participants} events={events} />}
+                    {view === 'placements' && <PlacementEntry race={selectedRace} participants={participants} events={events} onRefresh={refreshActiveRace} />}
                     {view === 'times' && <TimeEntry raceID={selectedRace.id} />}
-                                {view === 'awards' && <AwardsView events={events} mode="awards" />}
-                                {view === 'reporting' && <AwardsView events={events} mode="standings" />}
-                                        {view === 'import_csv' && (
-                        <CSVImport 
-                            raceID={selectedRace.id} 
-                            events={events} 
-                            onComplete={(count) => {
-                                alert(`Imported ${count} participants.`);
-                                loadRaceDetails(selectedRace.id);
-                                setView('participants');
-                            }}
-                            onCancel={() => setView('participants')}
-                        />
+                    {view === 'awards' && <AwardsView events={events} mode="awards" />}
+                    {view === 'reporting' && <AwardsView events={events} mode="standings" />}
+                    {view === 'stopwatch' && <StopwatchImport raceID={selectedRace.id} onComplete={() => setView('race_detail')} />}
+                    {view === 'live_display' && <LiveResults events={events} selectedRace={selectedRace} onRefresh={refreshActiveRace} />}
+                    {view === 'import_csv' && (
+                        <CSVImport raceID={selectedRace.id} events={events} onComplete={(count) => { loadRaceDetails(selectedRace.id); setView('participants'); }} onCancel={() => setView('participants')} />
                     )}
-                </div>
-                )}
-
-                {dbPath && !selectedRace && view !== 'list' && view !== 'create_race' && (
-                <div className="card" style={{ textAlign: 'center', padding: '50px' }}>
-                    <h2>No Active Race</h2>
-                    <p>Please select a race from the sidebar or click below.</p>
-                    <button onClick={() => setView('list')}>View All Races</button>
                 </div>
                 )}
             </>

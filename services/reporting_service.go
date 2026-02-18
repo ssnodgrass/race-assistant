@@ -130,11 +130,14 @@ func (s *ReportingService) GenerateAwardsPDF(eventID int, outputPath string) err
 	for _, cat := range categories {
 		m.AddRows(row.New(10).Add(col.New(12).Add(text.New(cat.Name, props.Text{Size: 12, Style: fontstyle.Bold, Top: 5}))))
 		for i, w := range cat.Winners {
+			activeTime := w.Time
+			if activeTime == "" { activeTime = w.UnofficialTime }
+			
 			m.AddRows(row.New(8).Add(
 				col.New(1).Add(text.New(fmt.Sprintf("%d.", i+1), props.Text{Size: 10})),
 				col.New(2).Add(text.New(w.BibNumber, props.Text{Size: 10})),
 				col.New(6).Add(text.New(fmt.Sprintf("%s %s", w.FirstName, w.LastName), props.Text{Size: 10})),
-				col.New(3).Add(text.New(w.Time, props.Text{Size: 10, Align: align.Right})),
+				col.New(3).Add(text.New(activeTime, props.Text{Size: 10, Align: align.Right})),
 			))
 		}
 	}
@@ -167,7 +170,6 @@ func (s *ReportingService) GenerateStandingsPDF(eventID int, outputPath string) 
 		),
 	)
 
-	// Table Header
 	m.AddRows(row.New(10).Add(
 		col.New(1).Add(text.New("Plc", props.Text{Size: 10, Style: fontstyle.Bold})),
 		col.New(1).Add(text.New("Bib", props.Text{Size: 10, Style: fontstyle.Bold})),
@@ -178,13 +180,16 @@ func (s *ReportingService) GenerateStandingsPDF(eventID int, outputPath string) 
 	))
 
 	for _, r := range results {
+		activeTime := r.Time
+		if activeTime == "" { activeTime = r.UnofficialTime }
+
 		m.AddRows(row.New(8).Add(
 			col.New(1).Add(text.New(fmt.Sprintf("%d", r.EventPlace), props.Text{Size: 10})),
 			col.New(1).Add(text.New(r.BibNumber, props.Text{Size: 10})),
 			col.New(5).Add(text.New(fmt.Sprintf("%s %s", r.FirstName, r.LastName), props.Text{Size: 10})),
 			col.New(1).Add(text.New(r.Gender, props.Text{Size: 10})),
 			col.New(1).Add(text.New(fmt.Sprintf("%d", r.Age), props.Text{Size: 10})),
-			col.New(3).Add(text.New(r.Time, props.Text{Size: 10, Align: align.Right})),
+			col.New(3).Add(text.New(activeTime, props.Text{Size: 10, Align: align.Right})),
 		))
 	}
 

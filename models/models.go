@@ -3,9 +3,10 @@ package models
 import "time"
 
 type Race struct {
-	ID   int       `json:"id"`
-	Name string    `json:"name"`
-	Date time.Time `json:"date"`
+	ID        int        `json:"id"`
+	Name      string     `json:"name"`
+	Date      time.Time  `json:"date"`
+	StartTime *time.Time `json:"start_time"`
 }
 
 type Event struct {
@@ -34,10 +35,16 @@ type TimingPulse struct {
 	RawTime string `json:"raw_time"`
 }
 
+type ImportedTime struct {
+	Place int    `json:"place"`
+	Time  string `json:"time"`
+}
+
 type ChuteAssignment struct {
-	RaceID    int    `json:"race_id"`
-	Place     int    `json:"place"`
-	BibNumber string `json:"bib_number"`
+	RaceID         int    `json:"race_id"`
+	Place          int    `json:"place"`
+	BibNumber      string `json:"bib_number"`
+	UnofficialTime string `json:"unofficial_time"` // Captured at point of entry
 }
 
 type AgeGroup struct {
@@ -65,21 +72,22 @@ type AwardConfig struct {
 	IncludeOverall            bool          `json:"include_overall"`
 	IncludeMasters            bool          `json:"include_masters"`
 	IncludeGrandMasters       bool          `json:"include_grand_masters"`
-	IncludeSeniorGrandMasters bool          `json:"include_senior_grand_masters"`
+	IncludeSeniorGrandMasters bool        `json:"include_senior_grand_masters"`
 	SplitGender               bool          `json:"split_gender"`
 	AwardStrategy             AwardStrategy `json:"award_strategy"`
 	AgeGroups                 []AgeGroup    `json:"age_groups"`
 }
 
 type Result struct {
-	ChutePlace int    `json:"chute_place"`
-	EventPlace int    `json:"event_place"`
-	BibNumber  string `json:"bib_number"`
-	FirstName  string `json:"first_name"`
-	LastName   string `json:"last_name"`
-	Gender     string `json:"gender"`
-	Age        int    `json:"age"`
-	Time       string `json:"time"`
-	Pace       string `json:"pace"`
-	Category   string `json:"category,omitempty"`
+	ChutePlace     int    `json:"chute_place"`
+	EventPlace     int    `json:"event_place"`
+	BibNumber      string `json:"bib_number"`
+	FirstName      string `json:"first_name"`
+	LastName       string `json:"last_name"`
+	Gender         string `json:"gender"`
+	Age            int    `json:"age"`
+	Time           string `json:"time"`
+	UnofficialTime string `json:"unofficial_time"`
+	Pace           string `json:"pace"`
+	Category       string `json:"category,omitempty"`
 }

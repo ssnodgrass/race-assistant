@@ -5,6 +5,7 @@ go 1.25.5
 require (
 	github.com/johnfercher/maroto/v2 v2.3.3
 	github.com/wailsapp/wails/v3 v3.0.0-alpha.72
+	go.bug.st/serial v1.6.4
 	modernc.org/sqlite v1.45.0
 )
 
@@ -19,6 +20,7 @@ require (
 	github.com/clipperhouse/uax29/v2 v2.4.0 // indirect
 	github.com/cloudflare/circl v1.6.3 // indirect
 	github.com/coder/websocket v1.8.14 // indirect
+	github.com/creack/goselect v0.1.2 // indirect
 	github.com/cyphar/filepath-securejoin v0.6.1 // indirect
 	github.com/dustin/go-humanize v1.0.1 // indirect
 	github.com/ebitengine/purego v0.9.1 // indirect

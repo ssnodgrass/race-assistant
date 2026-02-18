@@ -2,6 +2,7 @@ package services
 
 import (
 	"database/sql"
+	"time"
 	"github.com/ssnodgrass/race-assistant/internal/repository"
 	"github.com/ssnodgrass/race-assistant/models"
 )
@@ -33,4 +34,21 @@ func (s *RaceService) UpdateRace(race models.Race) error {
 
 func (s *RaceService) DeleteRace(id int) error {
 	return s.repo.Delete(id)
+}
+
+func (s *RaceService) StartRace(id int) error {
+	race, err := s.repo.GetByID(id)
+	if err != nil { return err }
+	
+	now := time.Now()
+	race.StartTime = &now
+	return s.repo.Update(race)
+}
+
+func (s *RaceService) ResetRace(id int) error {
+	race, err := s.repo.GetByID(id)
+	if err != nil { return err }
+	
+	race.StartTime = nil
+	return s.repo.Update(race)
 }

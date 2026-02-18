@@ -58,6 +58,20 @@ func (s *TimingService) AssignBibToPlace(raceID int, place int, bibNumber string
 	return s.repo.UpsertChuteAssignment(&ca)
 }
 
+func (s *TimingService) AssignBibToPlaceWithTime(raceID int, place int, bibNumber string, unofficialTime string) error {
+	if bibNumber != "?" && bibNumber != "" {
+		s.repo.DeleteBibAssignment(raceID, bibNumber)
+	}
+
+	ca := models.ChuteAssignment{
+		RaceID:         raceID,
+		Place:          place,
+		BibNumber:      bibNumber,
+		UnofficialTime: unofficialTime,
+	}
+	return s.repo.UpsertChuteAssignment(&ca)
+}
+
 func (s *TimingService) ShiftPlacements(raceID int, startPlace int, delta int) error {
 	return s.repo.ShiftPlacements(raceID, startPlace, delta)
 }
@@ -131,7 +145,11 @@ func (s *TimingService) GetEventResults(eventID int) ([]models.Result, error) {
 
 	for i := range results {
 		results[i].EventPlace = i + 1
-		results[i].Pace = s.calculatePace(results[i].Time, event.DistanceKM)
+		// Use official time if present, otherwise fallback to captured unofficial time for pace
+		activeTime := results[i].Time
+		if activeTime == "" { activeTime = results[i].UnofficialTime }
+		
+		results[i].Pace = s.calculatePace(activeTime, event.DistanceKM)
 	}
 	return results, nil
 }
@@ -141,7 +159,6 @@ func (s *TimingService) calculatePace(timeStr string, distanceKM float64) string
 		return "0:00/mi"
 	}
 
-	// 1 KM = 0.621371 Miles
 	distanceMiles := distanceKM * 0.621371
 
 	parts := strings.Split(timeStr, ":")

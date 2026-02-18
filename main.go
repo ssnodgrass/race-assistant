@@ -64,6 +64,18 @@ func (s *DatabaseService) Close() {
 	s.app.Event.Emit("db:closed", nil)
 }
 
+func (s *DatabaseService) OpenExternalWindow(view string, raceID int) {
+	log.Printf("[Action] Opening External Window (%s) for Race %d\n", view, raceID)
+	// On Linux, secondary windows often crash if they try to inherit the app menu.
+	// We use a clean window without the application menu for external displays.
+	s.app.Window.NewWithOptions(application.WebviewWindowOptions{
+		Title: "Race Assistant - " + view,
+		URL:   fmt.Sprintf("/?view=%s&raceID=%d", view, raceID),
+		Width: 1024,
+		Height: 768,
+	})
+}
+
 func (s *DatabaseService) connectTo(path string) {
 	dsn := fmt.Sprintf("%s?_busy_timeout=5000", path)
 	db, err := database.Connect(dsn)
@@ -93,8 +105,8 @@ func (s *DatabaseService) GetFilePath(title string) string {
 }
 
 func (s *DatabaseService) GetSavePath(title string, defaultName string) string {
-	result, _ := s.app.Dialog.SaveFile().
-		SetFilename(fmt.Sprintf("%s.pdf", title)).
+	result, _ := s.app.Dialog.OpenFile().
+		SetTitle(title).
 		AddFilter("PDF Files (*.pdf)", "*.pdf").
 		PromptForSingleSelection()
 	return result
@@ -112,6 +124,7 @@ func main() {
 	timingService := services.NewTimingService(timingRepo, eventRepo)
 	awardService := services.NewAwardService(eventRepo, timingRepo)
 	reportingService := services.NewReportingService(raceRepo, eventRepo, participantRepo, timingRepo, awardService, timingService)
+	stopwatchService := services.NewStopwatchService(timingRepo)
 
 	dbService := &DatabaseService{
 		services: []serviceWithDB{
@@ -121,6 +134,7 @@ func main() {
 			timingService,
 			awardService,
 			reportingService,
+			stopwatchService,
 		},
 	}
 
@@ -134,6 +148,7 @@ func main() {
 			application.NewService(timingService),
 			application.NewService(awardService),
 			application.NewService(reportingService),
+			application.NewService(stopwatchService),
 			application.NewService(dbService),
 		},
 		Assets: application.AssetOptions{
@@ -142,6 +157,7 @@ func main() {
 	})
 
 	dbService.app = app
+	stopwatchService.SetApp(app)
 
 	// Auto-open race_assistant.db if it exists
 	if _, err := os.Stat("race_assistant.db"); err == nil {
