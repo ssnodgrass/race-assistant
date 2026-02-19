@@ -4,7 +4,9 @@ import "time"
 
 // RaceRSUSettings stores credentials for RunSignUp integration
 type RaceRSUSettings struct {
-	RaceID string `json:"race_id"`
+	RaceID    string `json:"race_id"`
+	APIKey    string `json:"api_key"`
+	APISecret string `json:"api_secret"`
 }
 
 // Race struct
@@ -63,7 +65,7 @@ type Participant struct {
 	Gender       string     `json:"gender"`
 	DOB          *time.Time `json:"dob"`
 	AgeOnRaceDay int        `json:"age_on_race_day"`
-	CheckedIn    bool       `json:"checked_in"` // New field
+	CheckedIn    bool       `json:"checked_in"`
 }
 
 type TimingPulse struct {

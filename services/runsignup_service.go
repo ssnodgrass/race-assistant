@@ -29,6 +29,20 @@ func (s *RunSignUpService) SetDB(db *sql.DB) {
 	s.db = db
 }
 
+type rsuErrorResponse struct {
+	Error struct {
+		ErrorMsg string `json:"error_msg"`
+	} `json:"error"`
+}
+
+func (s *RunSignUpService) checkRSUError(body []byte) error {
+	var errResp rsuErrorResponse
+	if err := json.Unmarshal(body, &errResp); err == nil && errResp.Error.ErrorMsg != "" {
+		return fmt.Errorf("RunSignUp Error: %s", errResp.Error.ErrorMsg)
+	}
+	return nil
+}
+
 // GetRSUEvents fetches the list of events for a given RunSignUp Race ID
 func (s *RunSignUpService) GetRSUEvents(rsuRaceID string, apiKey string, apiSecret string) ([]models.RSUEvent, error) {
 	if rsuRaceID == "" || apiKey == "" || apiSecret == "" {
@@ -45,12 +59,20 @@ func (s *RunSignUpService) GetRSUEvents(rsuRaceID string, apiKey string, apiSecr
 	}
 	defer resp.Body.Close()
 
+	body, _ := io.ReadAll(resp.Body)
+
 	if resp.StatusCode != http.StatusOK {
-		body, _ := io.ReadAll(resp.Body)
+		if err := s.checkRSUError(body); err != nil {
+			return nil, err
+		}
 		return nil, fmt.Errorf("API error %d: %s", resp.StatusCode, string(body))
 	}
 
-	body, _ := io.ReadAll(resp.Body)
+	// Check for error inside 200 OK (some RSU endpoints do this)
+	if err := s.checkRSUError(body); err != nil {
+		return nil, err
+	}
+
 	var wrapper struct {
 		Race struct {
 			Events []models.RSUEvent `json:"events"`
@@ -58,7 +80,7 @@ func (s *RunSignUpService) GetRSUEvents(rsuRaceID string, apiKey string, apiSecr
 	}
 
 	if err := json.Unmarshal(body, &wrapper); err != nil {
-		return nil, err
+		return nil, fmt.Errorf("failed to parse race JSON: %w", err)
 	}
 
 	return wrapper.Race.Events, nil
@@ -80,12 +102,19 @@ func (s *RunSignUpService) GetParticipants(rsuRaceID string, rsuEventID string, 
 	}
 	defer resp.Body.Close()
 
+	body, _ := io.ReadAll(resp.Body)
+
 	if resp.StatusCode != http.StatusOK {
-		body, _ := io.ReadAll(resp.Body)
+		if err := s.checkRSUError(body); err != nil {
+			return nil, err
+		}
 		return nil, fmt.Errorf("API error %d: %s", resp.StatusCode, string(body))
 	}
 
-	body, _ := io.ReadAll(resp.Body)
+	// Check for error inside 200 OK
+	if err := s.checkRSUError(body); err != nil {
+		return nil, err
+	}
 	
 	var apiResponse []models.RSUEventParticipants
 	if err := json.Unmarshal(body, &apiResponse); err != nil {

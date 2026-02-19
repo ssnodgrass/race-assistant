@@ -82,66 +82,70 @@ export const StopwatchImport: React.FC<StopwatchImportProps> = ({ raceID, onComp
   };
 
   return (
-    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '20px' }}>
-      <div className="card">
-        <h2>Hardware Interface</h2>
-        <div style={{ marginBottom: '20px' }}>
-            <label>Select Port:</label>
-            <div style={{ display: 'flex', gap: '10px', marginTop: '5px' }}>
-                <select style={{ flex: 1 }} value={selectedPort} onChange={e => setSelectedPort(e.target.value)}>
-                    <option value="">-- Select --</option>
-                    {ports.map(p => <option key={p} value={p}>{p}</option>)}
-                </select>
-                <button onClick={refreshPorts} style={{ backgroundColor: '#444' }}>↻</button>
+    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 'var(--space-lg)', height: '100%' }}>
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-lg)' }}>
+        <div className="card" style={{ margin: 0 }}>
+            <h2 style={{ borderBottom: '1px solid var(--border)', paddingBottom: '8px', marginBottom: 'var(--space-md)' }}>Hardware Interface</h2>
+            <div className="form-group" style={{ marginBottom: '20px' }}>
+                <label style={{ display: 'block', marginBottom: '8px', fontWeight: 600, fontSize: '0.85em', color: 'var(--text-dim)' }}>SELECT PORT</label>
+                <div className="flex-row">
+                    <select style={{ flex: 1 }} value={selectedPort} onChange={e => setSelectedPort(e.target.value)}>
+                        <option value="">-- Select Serial Port --</option>
+                        {ports.map(p => <option key={p} value={p}>{p}</option>)}
+                    </select>
+                    <button onClick={refreshPorts} style={{ backgroundColor: '#444' }}>↻</button>
+                </div>
             </div>
+
+            <div className="card" style={{ backgroundColor: '#000', border: '1px solid var(--border)', margin: 0 }}>
+                <h3 style={{ fontSize: '1rem' }}>Console</h3>
+                <div className="flex-row" style={{ marginBottom: '10px' }}>
+                    <input style={{ flex: 1, height: '36px' }} value={command} onChange={e => setSendCommand(e.target.value)} placeholder="Send command..." />
+                    <button onClick={sendCommand} disabled={!isCapturing} style={{ height: '36px' }}>Send</button>
+                </div>
+                
+                <div style={{ 
+                    height: '150px', backgroundColor: 'black', 
+                    color: '#0f0', fontFamily: 'monospace', fontSize: '0.85em', 
+                    overflowY: 'auto', padding: '10px', border: '1px solid #333',
+                    borderRadius: '4px'
+                }}>
+                    {rawLog.map((line, i) => <div key={i}>{line}</div>)}
+                    <div ref={logEndRef} />
+                </div>
+            </div>
+
+            <button 
+                onClick={toggleCapture} 
+                style={{ width: '100%', padding: '15px', marginTop: '20px', backgroundColor: isCapturing ? 'var(--danger)' : 'var(--accent)' }}
+            >
+                {isCapturing ? '🛑 Stop Listening' : '🔌 Start Serial Listener'}
+            </button>
         </div>
 
-        <div className="card" style={{ backgroundColor: '#111', border: '1px solid #333' }}>
-            <h3>Terminal Commands</h3>
-            <p style={{ fontSize: '0.8em', color: 'var(--text-dim)' }}>Try 'D' for Download or '?' for Status.</p>
-            <div style={{ display: 'flex', gap: '10px' }}>
-                <input style={{ flex: 1 }} value={command} onChange={e => setSendCommand(e.target.value)} />
-                <button onClick={sendCommand} disabled={!isCapturing}>Send</button>
-            </div>
-            
-            <div style={{ 
-                marginTop: '15px', height: '150px', backgroundColor: 'black', 
-                color: '#0f0', fontFamily: 'monospace', fontSize: '0.8em', 
-                overflowY: 'auto', padding: '10px', border: '1px solid #444' 
-            }}>
-                {rawLog.map((line, i) => <div key={i}>{line}</div>)}
-                <div ref={logEndRef} />
-            </div>
+        <div className="card" style={{ margin: 0 }}>
+            <h3 style={{ borderBottom: '1px solid var(--border)', paddingBottom: '8px', marginBottom: 'var(--space-md)' }}>Failsafe: Manual Paste</h3>
+            <textarea 
+                placeholder="e.g. 001 00:12:34.567"
+                style={{ width: '100%', height: '100px', backgroundColor: '#000', color: '#eee', padding: '10px', border: '1px solid var(--border)', borderRadius: '4px', resize: 'none' }}
+                value={manualText}
+                onChange={e => setManualText(e.target.value)}
+            />
+            <button onClick={handleManualParse} style={{ width: '100%', marginTop: '10px', backgroundColor: '#444' }}>Parse Pasted Text</button>
         </div>
-
-        <button 
-            onClick={toggleCapture} 
-            style={{ width: '100%', padding: '15px', marginTop: '20px', backgroundColor: isCapturing ? 'var(--danger)' : 'var(--accent)' }}
-        >
-            {isCapturing ? 'Stop Listening' : 'Start Serial Listener'}
-        </button>
-
-        <hr style={{ margin: '30px 0', borderColor: 'var(--border)' }} />
-
-        <h3>Failsafe: Manual Text Paste</h3>
-        <textarea 
-            placeholder="Paste text from stopwatch software here..."
-            style={{ width: '100%', height: '100px', backgroundColor: '#111', color: '#eee', padding: '10px' }}
-            value={manualText}
-            onChange={e => setManualText(e.target.value)}
-        />
-        <button onClick={handleManualParse} style={{ width: '100%', marginTop: '10px', backgroundColor: '#444' }}>Parse Pasted Text</button>
       </div>
 
-      <div className="card">
-        <h2>Review Captured Data</h2>
-        <div style={{ maxHeight: 'calc(100vh - 250px)', overflowY: 'auto' }}>
+      <div className="card" style={{ margin: 0, display: 'flex', flexDirection: 'column' }}>
+        <h2 style={{ borderBottom: '1px solid var(--border)', paddingBottom: '8px', marginBottom: 'var(--space-md)' }}>Review Staged Data</h2>
+        <div className="table-container" style={{ flexGrow: 1 }}>
             {captured.length > 0 ? (
-                <table>
-                    <thead><tr><th>Place</th><th>Time</th></tr></thead>
+                <table style={{ borderCollapse: 'collapse' }}>
+                    <thead>
+                        <tr><th style={{ paddingLeft: 'var(--space-md)' }}>Place</th><th>Captured Time</th></tr>
+                    </thead>
                     <tbody>
                         {captured.map((c, i) => (
-                            <tr key={i}><td>{c.place}</td><td style={{ fontFamily: 'monospace' }}>{c.time}</td></tr>
+                            <tr key={i}><td style={{ paddingLeft: 'var(--space-md)' }}>{c.place}</td><td style={{ fontFamily: 'monospace', fontWeight: 700, color: 'var(--accent)' }}>{c.time}</td></tr>
                         ))}
                     </tbody>
                 </table>
@@ -152,8 +156,8 @@ export const StopwatchImport: React.FC<StopwatchImportProps> = ({ raceID, onComp
             )}
         </div>
         {captured.length > 0 && !isCapturing && (
-            <button onClick={handleCommit} style={{ width: '100%', marginTop: '20px', padding: '15px' }}>
-                Commit {captured.length} Pulses to Race
+            <button onClick={handleCommit} style={{ width: '100%', marginTop: '20px', padding: '15px', backgroundColor: 'var(--success)' }}>
+                COMMIT {captured.length} PULSES TO DATABASE
             </button>
         )}
       </div>

@@ -13,6 +13,8 @@ export const RaceDashboard: React.FC<RaceDashboardProps> = ({ race, events, part
   const [elapsed, setElapsed] = useState('00:00:00');
   const [manualTime, setManualTime] = useState('00:00:00');
   const [rsuRaceID, setRsuRaceID] = useState(race.rsu?.race_id || '');
+  const [rsuAPIKey, setRsuAPIKey] = useState(race.rsu?.api_key || '');
+  const [rsuAPISecret, setRsuAPISecret] = useState(race.rsu?.api_secret || '');
 
   const checkedInCount = participants.filter(p => p.checked_in).length;
 
@@ -44,6 +46,8 @@ export const RaceDashboard: React.FC<RaceDashboardProps> = ({ race, events, part
 
   useEffect(() => {
     setRsuRaceID(race.rsu?.race_id || '');
+    setRsuAPIKey(race.rsu?.api_key || '');
+    setRsuAPISecret(race.rsu?.api_secret || '');
   }, [race.id, race.rsu]);
 
   const handleStart = () => {
@@ -73,11 +77,13 @@ export const RaceDashboard: React.FC<RaceDashboardProps> = ({ race, events, part
     const r = new Race({ 
         ...race, 
         rsu: {
-            race_id: rsuRaceID
+            race_id: rsuRaceID,
+            api_key: rsuAPIKey,
+            api_secret: rsuAPISecret
         }
     });
     RaceService.UpdateRace(r).then(() => {
-        alert("Race ID Saved");
+        alert("RunSignUp Settings Saved");
         onRefresh();
     }).catch(console.error);
   };
@@ -101,7 +107,7 @@ export const RaceDashboard: React.FC<RaceDashboardProps> = ({ race, events, part
                         <input 
                             value={manualTime} 
                             onChange={e => setManualTime(e.target.value)}
-                            style={{ fontSize: '1.2rem', width: '140px', textAlign: 'center', marginBottom: 'var(--space-md)' }}
+                            style={{ fontSize: '1.2rem', width: '140px', textAlign: 'center', marginBottom: 'var(--spacing-md)' }}
                         />
                         <button onClick={handleStart} style={{ backgroundColor: 'var(--success)', width: '100%' }}>START CLOCK</button>
                     </div>
@@ -114,7 +120,7 @@ export const RaceDashboard: React.FC<RaceDashboardProps> = ({ race, events, part
 
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(320px, 1fr))', gap: 'var(--space-lg)' }}>
         <div className="card" style={{ margin: 0 }}>
-          <h3 style={{ borderBottom: '1px solid var(--border)', paddingBottom: '8px' }}>Events</h3>
+          <h3 style={{ borderBottom: '1px solid var(--border)', paddingBottom: 'var(--space-sm)', marginBottom: 'var(--space-md)' }}>Events</h3>
           <p style={{ fontSize: '3rem', fontWeight: 800, margin: '16px 0' }}>{events.length}</p>
           <ul style={{ paddingLeft: '24px', color: 'var(--text-dim)' }}>
             {events.map(ev => <li key={ev.id} style={{ marginBottom: '4px' }}>{ev.name} ({ev.distance_km} km)</li>)}
@@ -122,7 +128,7 @@ export const RaceDashboard: React.FC<RaceDashboardProps> = ({ race, events, part
         </div>
         
         <div className="card" style={{ margin: 0 }}>
-          <h3 style={{ borderBottom: '1px solid var(--border)', paddingBottom: '8px' }}>Registration</h3>
+          <h3 style={{ borderBottom: '1px solid var(--border)', paddingBottom: 'var(--space-sm)', marginBottom: 'var(--space-md)' }}>Registration</h3>
           <div style={{ display: 'flex', justifyContent: 'space-around', alignItems: 'center', margin: '24px 0' }}>
             <div style={{ textAlign: 'center' }}>
                 <div style={{ fontSize: '3rem', fontWeight: 800 }}>{participants.length}</div>
@@ -140,12 +146,20 @@ export const RaceDashboard: React.FC<RaceDashboardProps> = ({ race, events, part
         </div>
 
         <div className="card" style={{ borderTop: '4px solid var(--accent)', margin: 0 }}>
-            <h3>RunSignUp Link</h3>
-            <div className="flex-row" style={{ flexDirection: 'column', alignItems: 'stretch', gap: '10px' }}>
-                <label>Race ID</label>
-                <input value={rsuRaceID} onChange={e => setRsuRaceID(e.target.value)} placeholder="e.g. 54529" />
-                <button onClick={handleSaveRSU}>Link Race</button>
+            <h3 style={{ borderBottom: '1px solid var(--border)', paddingBottom: 'var(--space-sm)', marginBottom: 'var(--space-md)' }}>RunSignUp Integration</h3>
+            <div style={{ marginBottom: '15px' }}>
+                <label style={{ display: 'block', marginBottom: '8px', fontWeight: 600, fontSize: '0.85em', color: 'var(--text-dim)' }}>RACE ID</label>
+                <input value={rsuRaceID} onChange={e => setRsuRaceID(e.target.value)} placeholder="e.g. 54529" style={{ width: '100%' }} />
             </div>
+            <div style={{ marginBottom: '15px' }}>
+                <label style={{ display: 'block', marginBottom: '8px', fontWeight: 600, fontSize: '0.85em', color: 'var(--text-dim)' }}>API KEY</label>
+                <input type="password" value={rsuAPIKey} onChange={e => setRsuAPIKey(e.target.value)} style={{ width: '100%' }} />
+            </div>
+            <div style={{ marginBottom: 'var(--space-md)' }}>
+                <label style={{ display: 'block', marginBottom: '8px', fontWeight: 600, fontSize: '0.85em', color: 'var(--text-dim)' }}>API SECRET</label>
+                <input type="password" value={rsuAPISecret} onChange={e => setRsuAPISecret(e.target.value)} style={{ width: '100%' }} />
+            </div>
+            <button onClick={handleSaveRSU} style={{ width: '100%', backgroundColor: 'var(--accent)' }}>Save RSU Config</button>
         </div>
       </div>
     </div>

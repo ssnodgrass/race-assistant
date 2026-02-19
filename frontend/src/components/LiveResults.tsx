@@ -58,7 +58,6 @@ export const LiveResults: React.FC<LiveResultsProps> = ({ events, selectedRace, 
         try {
             const awardsRes = await fetch(`/api/awards?eventID=${selectedID}`);
             setCategories(await awardsRes.json());
-            
             const resultsRes = await fetch(`/api/results?eventID=${selectedID}`);
             const data = await resultsRes.json();
             const latest = [...(data || [])].sort((a, b) => b.chute_place - a.chute_place);
@@ -82,61 +81,61 @@ export const LiveResults: React.FC<LiveResultsProps> = ({ events, selectedRace, 
   if (events.length === 0) return <div style={{ textAlign: 'center', marginTop: '100px' }}><h2>Loading Race Events...</h2></div>;
 
   return (
-    <div style={{ height: 'calc(100vh - 80px)', display: 'flex', flexDirection: 'column', gap: '20px' }}>
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+    <div style={{ height: '100%', display: 'flex', flexDirection: 'column', gap: 'var(--space-lg)' }}>
+      <div className="flex-between">
         <div>
-            <h1 style={{ margin: 0, fontSize: '3em', color: 'var(--accent)' }}>Live Results</h1>
+            <h1 style={{ margin: 0, fontSize: '3.5rem', color: 'var(--accent)' }}>Live Results</h1>
             {selectedRace?.start_time && (
-                <div style={{ fontSize: '1.5em', color: 'var(--success)', fontFamily: 'monospace' }}>
-                    CURRENT RACE TIME: {elapsed}
+                <div style={{ fontSize: '1.8rem', color: 'var(--success)', fontFamily: 'monospace', fontWeight: 700 }}>
+                    RACE TIME: {elapsed}
                 </div>
             )}
         </div>
-        <div style={{ display: 'flex', alignItems: 'center', gap: '15px' }}>
-            <span style={{ fontSize: '1.2em' }}>Event:</span>
+        <div className="flex-row">
+            <span style={{ fontSize: '1.5rem', fontWeight: 600 }}>EVENT:</span>
             <select 
                 value={selectedID} 
                 onChange={e => setSelectedID(Number(e.target.value))}
-                style={{ fontSize: '1.2em', padding: '10px 20px', backgroundColor: '#222', border: '1px solid #444' }}
+                style={{ fontSize: '1.5rem', padding: '12px 24px', minWidth: '300px' }}
             >
                 {events.map(ev => <option key={ev.id} value={ev.id}>{ev.name}</option>)}
             </select>
         </div>
       </div>
 
-      <div style={{ display: 'flex', gap: '30px', flexGrow: 1, overflow: 'hidden' }}>
-        <div className="card" style={{ flex: 1, backgroundColor: '#0a0a0a', border: '2px solid #222' }}>
-            <h2 style={{ borderBottom: '1px solid #333', paddingBottom: '15px', color: 'var(--text-dim)' }}>Latest Finishers</h2>
-            <table style={{ width: '100%', fontSize: '1.6em', borderCollapse: 'collapse' }}>
-                <thead>
-                    <tr style={{ color: 'var(--text-dim)', textAlign: 'left', fontSize: '0.6em' }}>
-                        <th>PLC</th><th>BIB</th><th>NAME</th><th>TIME</th>
-                    </tr>
-                </thead>
-                <tbody>
-                    {lastFinishers.map(r => (
-                        <tr key={r.bib_number} style={{ borderBottom: '1px solid #111' }}>
-                            <td style={{ padding: '10px 0' }}>{r.chute_place}</td>
-                            <td>{r.bib_number}</td>
-                            <td><strong>{r.first_name} {r.last_name}</strong></td>
-                            <td style={{ color: 'var(--accent)', textAlign: 'right' }}>{getDisplayTime(r)}</td>
-                        </tr>
-                    ))}
-                </tbody>
-            </table>
+      <div style={{ display: 'flex', gap: 'var(--space-xl)', flexGrow: 1, overflow: 'hidden' }}>
+        <div className="table-card" style={{ flex: 1, display: 'flex', flexDirection: 'column' }}>
+            <h2 style={{ padding: 'var(--space-md) var(--space-lg)', borderBottom: '1px solid var(--border)', color: 'var(--text-dim)', fontSize: '1.5rem', margin: 0 }}>Latest Finishers</h2>
+            <div style={{ flexGrow: 1, overflowY: 'auto' }}>
+                <table style={{ fontSize: '1.8rem' }}>
+                    <thead>
+                        <tr><th>PLC</th><th>BIB</th><th>NAME</th><th style={{ textAlign: 'right' }}>TIME</th></tr>
+                    </thead>
+                    <tbody>
+                        {lastFinishers.map(r => (
+                            <tr key={r.bib_number}>
+                                <td>{r.chute_place}</td>
+                                <td>{r.bib_number}</td>
+                                <td><strong>{r.first_name} {r.last_name}</strong></td>
+                                <td style={{ color: 'var(--accent)', textAlign: 'right', fontWeight: 800 }}>{getDisplayTime(r)}</td>
+                            </tr>
+                        ))}
+                    </tbody>
+                </table>
+            </div>
         </div>
 
-        <div style={{ flex: 1.2, display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '15px', overflowY: 'auto', alignContent: 'start' }}>
+        <div style={{ flex: 1.2, display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 'var(--space-md)', overflowY: 'auto', alignContent: 'start' }}>
             {categories.map(cat => (
-                <div key={cat.name} className="card" style={{ borderLeft: '6px solid var(--accent)', margin: 0, backgroundColor: '#0a0a0a', padding: '15px' }}>
-                    <h3 style={{ fontSize: '0.9em', color: 'var(--text-dim)', marginBottom: '10px', textTransform: 'uppercase', borderBottom: '1px solid #222', paddingBottom: '5px' }}>{cat.name}</h3>
+                <div key={cat.name} className="card" style={{ borderLeft: '6px solid var(--accent)', margin: 0, padding: 'var(--space-md)' }}>
+                    <h3 style={{ fontSize: '1rem', color: 'var(--text-dim)', marginBottom: 'var(--space-sm)', textTransform: 'uppercase', borderBottom: '1px solid #222', paddingBottom: '4px' }}>{cat.name}</h3>
                     {cat.winners.map((w, i) => (
-                        <div key={w.bib_number} style={{ fontSize: '1.2em', marginBottom: '8px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                        <div key={w.bib_number} style={{ fontSize: '1.4rem', marginBottom: '6px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                             <div style={{ whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', flex: 1 }}>
                                 <span style={{ color: 'var(--text-dim)', fontSize: '0.8em', marginRight: '8px' }}>{i+1}.</span>
-                                {w.first_name} {w.last_name}
+                                <strong>{w.first_name} {w.last_name}</strong>
                             </div>
-                            <div style={{ fontSize: '0.8em', color: 'var(--accent)', fontWeight: 'bold' }}>{getDisplayTime(w)}</div>
+                            <div style={{ fontSize: '0.9em', color: 'var(--accent)', fontWeight: 800 }}>{getDisplayTime(w)}</div>
                         </div>
                     ))}
                 </div>

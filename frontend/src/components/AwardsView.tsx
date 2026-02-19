@@ -99,15 +99,8 @@ export const AwardsView: React.FC<AwardsViewProps> = ({ events, mode = 'awards',
     <div className="card">Initializing Results...</div>
   );
 
-  const containerStyle: React.CSSProperties = {
-    display: 'flex',
-    flexDirection: 'column',
-    height: (isExternal || isBrowser) ? '100%' : 'auto',
-    overflow: 'hidden'
-  };
-
   return (
-    <div style={containerStyle}>
+    <div style={{ display: 'flex', flexDirection: 'column', height: '100%' }}>
       <div className="flex-between" style={{ marginBottom: 'var(--space-lg)', flexShrink: 0 }}>
         <div className="flex-row" style={{ flexWrap: 'wrap' }}>
             <h2 style={{ fontSize: (isExternal || isBrowser) ? '2.5rem' : '1.8rem', margin: 0 }}>
@@ -166,9 +159,9 @@ export const AwardsView: React.FC<AwardsViewProps> = ({ events, mode = 'awards',
                 ))}
             </div>
         ) : (
-            <div className="card" style={{ padding: 0, overflow: 'visible' }}>
+            <div className="table-card" style={{ overflow: 'visible' }}>
                 <table style={{ width: '100%', textAlign: 'left', borderCollapse: 'collapse', fontSize: (isExternal || isBrowser) ? '1.6rem' : '1rem' }}>
-                    <thead style={{ position: 'sticky', top: 0, backgroundColor: 'var(--bg-card)', zIndex: 10 }}>
+                    <thead style={{ position: 'sticky', top: 0, zIndex: 10 }}>
                         <tr>
                             <th style={{ paddingLeft: 'var(--space-md)' }}>Plc</th>
                             <th>Bib</th>

@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { TimingService } from '../../bindings/github.com/ssnodgrass/race-assistant/services';
 import { TimingPulse } from '../../bindings/github.com/ssnodgrass/race-assistant/models';
 
@@ -8,8 +8,12 @@ interface TimeEntryProps {
 
 export const TimeEntry: React.FC<TimeEntryProps> = ({ raceID }) => {
   const [pulses, setPulses] = useState<TimingPulse[]>([]);
-  const [place, setPlace] = useState('1');
-  const [time, setTime] = useState('');
+  const [targetPlace, setTargetPlace] = useState('');
+  const [timeValue, setTimeValue] = useState('');
+  const [editingID, setEditingID] = useState<number | null>(null);
+  const [nextPlace, setNextPlace] = useState(1);
+
+  const timeInputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
     loadPulses();
@@ -17,77 +21,137 @@ export const TimeEntry: React.FC<TimeEntryProps> = ({ raceID }) => {
 
   const loadPulses = () => {
     TimingService.ListTimingPulses(raceID).then(data => {
-        setPulses(data || []);
-        const nextPlace = (data?.length > 0) ? Math.max(...data.map(d => d.place)) + 1 : 1;
-        setPlace(nextPlace.toString());
+        const sorted = data || [];
+        setPulses(sorted);
+        const next = (sorted.length > 0) ? Math.max(...sorted.map(d => d.place)) + 1 : 1;
+        setNextPlace(next);
+        if (!editingID) {
+            setTargetPlace(next.toString());
+        }
     }).catch(console.error);
   };
 
-  const handleSubmit = (e?: React.FormEvent) => {
-    if (e) e.preventDefault();
-    if (!time || !place) return;
-
-    TimingService.AddTimingPulse(raceID, parseInt(place), time)
-      .then(() => {
-        loadPulses();
-        setTime('');
-      })
-      .catch(console.error);
+  const handleSelect = (p: TimingPulse) => {
+    setEditingID(p.id);
+    setTargetPlace(p.place.toString());
+    setTimeValue(p.raw_time);
+    timeInputRef.current?.focus();
   };
 
-  const handleDelete = (id: number) => {
-    if (window.confirm("Delete this time pulse?")) {
-        TimingService.DeleteTimingPulse(id).then(loadPulses).catch(console.error);
+  const resetForm = () => {
+    setEditingID(null);
+    setTargetPlace(nextPlace.toString());
+    setTimeValue('');
+    timeInputRef.current?.focus();
+  };
+
+  const handleSubmit = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!timeValue || !targetPlace) return;
+
+    if (editingID) {
+        const pulse = pulses.find(p => p.id === editingID);
+        if (pulse) {
+            const updated = new TimingPulse({ ...pulse, raw_time: timeValue, place: parseInt(targetPlace) });
+            TimingService.UpdateTimingPulse(updated).then(() => {
+                loadPulses();
+                resetForm();
+            }).catch(console.error);
+        }
+    } else {
+        TimingService.AddTimingPulse(raceID, parseInt(targetPlace), timeValue)
+          .then(() => {
+            loadPulses();
+            setTimeValue('');
+          })
+          .catch(console.error);
     }
   };
 
-  const handleUpdate = (p: TimingPulse, field: 'place' | 'raw_time', value: any) => {
-    const updated = new TimingPulse({ ...p, [field]: field === 'place' ? parseInt(value) : value });
-    TimingService.UpdateTimingPulse(updated).then(loadPulses).catch(console.error);
+  const handleDelete = (id: number) => {
+    if (window.confirm("Delete this recorded time?")) {
+        TimingService.DeleteTimingPulse(id).then(() => {
+            loadPulses();
+            if (editingID === id) resetForm();
+        }).catch(console.error);
+    }
   };
 
   return (
-    <div>
-      <div style={{ marginBottom: '20px' }}>
-        <h2>Recorded Times</h2>
+    <div style={{ display: 'flex', flexDirection: 'column', height: '100%' }}>
+      <div className="flex-between" style={{ marginBottom: 'var(--space-lg)' }}>
+        <h2>Manual Time Entry</h2>
+        {editingID && <button onClick={resetForm} style={{ backgroundColor: '#444' }}>Cancel Editing</button>}
       </div>
 
-      <div className="card" style={{ marginBottom: '20px', border: '1px solid var(--success)' }}>
+      <div className="card" style={{ marginBottom: 'var(--space-lg)', border: '1px solid var(--accent)', backgroundColor: 'rgba(0, 123, 255, 0.03)' }}>
         <form onSubmit={handleSubmit} style={{ display: 'flex', gap: '20px', alignItems: 'flex-end' }}>
-            <div>
-                <label>Place:</label><br/>
-                <input type="number" value={place} onChange={e => setPlace(e.target.value)} style={{ width: '80px' }} />
+            <div style={{ width: '120px' }}>
+                <label style={{ display: 'block', marginBottom: '8px', fontWeight: 600, fontSize: '0.85em', color: 'var(--text-dim)' }}>SEQUENCE #</label>
+                <input type="number" value={targetPlace} onChange={e => setTargetPlace(e.target.value)} style={{ width: '100%' }} />
             </div>
             <div style={{ flex: 1 }}>
-                <label>Time (MM:SS.hh):</label><br/>
-                <input placeholder="e.g. 18:24.00" value={time} onChange={e => setTime(e.target.value)} style={{ width: '100%' }} autoFocus />
+                <label style={{ display: 'block', marginBottom: '8px', fontWeight: 600, fontSize: '0.85em', color: 'var(--text-dim)' }}>TIME (HH:MM:SS.ms)</label>
+                <input 
+                    ref={timeInputRef}
+                    placeholder="e.g. 00:18:24.000" 
+                    value={timeValue} 
+                    onChange={e => setTimeValue(e.target.value)} 
+                    style={{ width: '100%', fontSize: '1.2rem', fontFamily: 'monospace' }} 
+                    autoFocus 
+                />
             </div>
-            <button type="submit">Save</button>
+            <button type="submit" style={{ padding: '12px 40px' }}>
+                {editingID ? 'UPDATE TIME' : 'RECORD TIME'}
+            </button>
         </form>
       </div>
 
-      <div className="card">
-            <table>
-                <thead><tr><th>Place</th><th>Time</th><th>Actions</th></tr></thead>
+      <div className="table-card" style={{ flexGrow: 1, overflowY: 'auto' }}>
+            <table style={{ width: '100%', textAlign: 'left', borderCollapse: 'collapse' }}>
+                <thead>
+                    <tr>
+                        <th style={{ paddingLeft: 'var(--space-lg)', width: '140px' }}>Sequence</th>
+                        <th>Recorded Time Value</th>
+                        <th style={{ textAlign: 'right', paddingRight: 'var(--space-lg)' }}>Actions</th>
+                    </tr>
+                </thead>
                 <tbody>
-                    {pulses.map((p, idx) => (
-                        <tr key={p.id}>
-                            <td>
-                                <input type="number" defaultValue={p.place} onBlur={(e) => handleUpdate(p, 'place', e.target.value)} style={{ width: '60px' }} />
+                    {[...pulses].sort((a,b) => b.place - a.place).map((p) => (
+                        <tr 
+                            key={p.id} 
+                            onClick={() => handleSelect(p)} 
+                            style={{ 
+                                cursor: 'pointer', 
+                                backgroundColor: editingID === p.id ? 'rgba(0, 123, 255, 0.1)' : 'transparent' 
+                            }}
+                        >
+                            <td style={{ paddingLeft: 'var(--space-lg)' }}>
+                                <strong style={{ opacity: 0.6 }}>#{p.place}</strong>
                             </td>
                             <td>
-                                <input defaultValue={p.raw_time} onBlur={(e) => handleUpdate(p, 'raw_time', e.target.value)} style={{ width: '120px', fontFamily: 'monospace' }} />
+                                <span style={{ fontFamily: 'monospace', fontSize: '1.2rem', color: 'var(--accent)', fontWeight: 700 }}>
+                                    {p.raw_time}
+                                </span>
                             </td>
-                            <td>
-                                <button onClick={() => handleDelete(p.id)} style={{ backgroundColor: 'var(--danger)' }}>×</button>
+                            <td style={{ textAlign: 'right', paddingRight: 'var(--space-lg)' }}>
+                                <button 
+                                    onClick={(e) => { e.stopPropagation(); handleDelete(p.id); }} 
+                                    style={{ backgroundColor: 'transparent', color: 'var(--danger)', padding: '4px 8px' }}
+                                >
+                                    Delete
+                                </button>
                             </td>
                         </tr>
                     ))}
-                    <tr style={{ backgroundColor: '#ffffff05' }}>
-                        <td><input type="number" value={place} onChange={e => setPlace(e.target.value)} style={{ width: '60px' }} /></td>
-                        <td><input value={time} onChange={e => setTime(e.target.value)} onKeyDown={e => e.key === 'Enter' && handleSubmit()} style={{ width: '120px' }} /></td>
-                        <td><button onClick={() => handleSubmit()}>Add Row</button></td>
-                    </tr>
+                    {pulses.length === 0 && (
+                        <tr>
+                            <td colSpan={3} style={{ textAlign: 'center', padding: '60px', color: 'var(--text-dim)' }}>
+                                <div style={{ fontSize: '2rem', marginBottom: '10px' }}>⏱️</div>
+                                No manual times recorded yet.
+                            </td>
+                        </tr>
+                    )}
                 </tbody>
             </table>
         </div>

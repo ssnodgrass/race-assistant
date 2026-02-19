@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
-import { ParticipantService, RunSignUpService, RaceService, SettingsService } from '../../bindings/github.com/ssnodgrass/race-assistant/services';
-import { Participant, Event as RaceEvent, RSUEvent } from '../../bindings/github.com/ssnodgrass/race-assistant/models';
+import { ParticipantService, RunSignUpService, RaceService } from '../../bindings/github.com/ssnodgrass/race-assistant/services';
+import { Participant, Event as RaceEvent, RSUEvent, Race } from '../../bindings/github.com/ssnodgrass/race-assistant/models';
 
 interface ParticipantManagementProps {
   raceID: number;
@@ -22,7 +22,7 @@ export const ParticipantManagement: React.FC<ParticipantManagementProps> = ({ ra
     bib: '', first: '', last: '', gender: 'M', age: '30', dob: '', eventID: events[0]?.id || 0, checked: false
   });
 
-  // Sorting
+  // Sorting State
   const [sortKey, setSortKey] = useState<SortKey>('bib');
   const [sortDir, setSortDir] = useState<'asc' | 'desc'>('asc');
 
@@ -40,13 +40,9 @@ export const ParticipantManagement: React.FC<ParticipantManagementProps> = ({ ra
 
   const loadRSUInfo = async () => {
     try {
-        const [race, apiKey, apiSecret] = await Promise.all([
-            RaceService.GetByID(raceID),
-            SettingsService.Get('rsu_api_key'),
-            SettingsService.Get('rsu_api_secret')
-        ]);
-        if (race?.rsu?.race_id && apiKey && apiSecret) {
-            const list = await RunSignUpService.GetRSUEvents(race.rsu.race_id, apiKey, apiSecret);
+        const race = await RaceService.GetByID(raceID);
+        if (race?.rsu?.race_id && race.rsu.api_key && race.rsu.api_secret) {
+            const list = await RunSignUpService.GetRSUEvents(race.rsu.race_id, race.rsu.api_key, race.rsu.api_secret);
             const localYear = new Date(race.date).getFullYear();
             const filtered = (list || []).filter(re => new Date(re.start_time).getFullYear() === localYear);
             setRsuEvents(filtered);
@@ -61,12 +57,10 @@ export const ParticipantManagement: React.FC<ParticipantManagementProps> = ({ ra
   };
 
   const handleRSUImportAction = async () => {
-    const [race, apiKey, apiSecret] = await Promise.all([
-        RaceService.GetByID(raceID),
-        SettingsService.Get('rsu_api_key'),
-        SettingsService.Get('rsu_api_secret')
-    ]);
-    if (!race?.rsu?.race_id || !apiKey || !apiSecret) return alert("Credentials missing!");
+    const race = await RaceService.GetByID(raceID);
+    if (!race?.rsu?.race_id || !race?.rsu?.api_key || !race?.rsu?.api_secret) {
+        return alert("Configure RunSignUp credentials in the Race Dashboard first!");
+    }
 
     setIsSyncing(true);
     let total = 0;
@@ -76,7 +70,7 @@ export const ParticipantManagement: React.FC<ParticipantManagementProps> = ({ ra
         for (const rsuEv of rsuEvents) {
             const localEventID = eventMappings[rsuEv.event_id];
             if (!localEventID) continue; 
-            const incoming = await RunSignUpService.GetParticipants(race.rsu.race_id, rsuEv.event_id.toString(), apiKey, apiSecret);
+            const incoming = await RunSignUpService.GetParticipants(race.rsu.race_id, rsuEv.event_id.toString(), race.rsu.api_key, race.rsu.api_secret);
             for (const p of incoming) {
                 const isDup = participants.some(it => {
                     if (p.bib_number && it.bib_number === p.bib_number) return true;
@@ -100,25 +94,6 @@ export const ParticipantManagement: React.FC<ParticipantManagementProps> = ({ ra
         onRefresh();
     } catch (e) { alert("Failed: " + e); } finally { setIsSyncing(false); }
   };
-
-  const filteredParticipants = participants.filter(p => {
-    const query = searchQuery.toLowerCase();
-    return p.bib_number.toLowerCase().includes(query) ||
-           p.first_name.toLowerCase().includes(query) ||
-           p.last_name.toLowerCase().includes(query) ||
-           p.gender.toLowerCase().includes(query);
-  });
-
-  const sortedParticipants = [...filteredParticipants].sort((a, b) => {
-    let res = 0;
-    if (sortKey === 'bib') res = (parseInt(a.bib_number) || 0) - (parseInt(b.bib_number) || 0);
-    else if (sortKey === 'name') res = `${a.last_name}${a.first_name}`.localeCompare(`${b.last_name}${b.first_name}`);
-    else if (sortKey === 'gender') res = a.gender.localeCompare(b.gender);
-    else if (sortKey === 'age') res = a.age_on_race_day - b.age_on_race_day;
-    else if (sortKey === 'event') res = (events.find(e => e.id === a.event_id)?.name || '').localeCompare(events.find(e => e.id === b.event_id)?.name || '');
-    else if (sortKey === 'checked') res = (a.checked_in === b.checked_in) ? 0 : (a.checked_in ? -1 : 1);
-    return sortDir === 'asc' ? res : -res;
-  });
 
   const toggleSort = (key: SortKey) => {
     if (sortKey === key) setSortDir(sortDir === 'asc' ? 'desc' : 'asc');
@@ -153,6 +128,25 @@ export const ParticipantManagement: React.FC<ParticipantManagementProps> = ({ ra
     const action = editingID ? ParticipantService.UpdateParticipant(p) : ParticipantService.AddParticipant(p);
     action.then(() => { setIsAdding(false); setEditingID(null); onRefresh(); }).catch(console.error);
   };
+
+  const filteredParticipants = participants.filter(p => {
+    const query = searchQuery.toLowerCase();
+    return p.bib_number.toLowerCase().includes(query) ||
+           p.first_name.toLowerCase().includes(query) ||
+           p.last_name.toLowerCase().includes(query) ||
+           p.gender.toLowerCase().includes(query);
+  });
+
+  const sortedParticipants = [...filteredParticipants].sort((a, b) => {
+    let res = 0;
+    if (sortKey === 'bib') res = (parseInt(a.bib_number) || 0) - (parseInt(b.bib_number) || 0);
+    else if (sortKey === 'name') res = `${a.last_name}${a.first_name}`.localeCompare(`${b.last_name}${b.first_name}`);
+    else if (sortKey === 'gender') res = a.gender.localeCompare(b.gender);
+    else if (sortKey === 'age') res = a.age_on_race_day - b.age_on_race_day;
+    else if (sortKey === 'event') res = (events.find(e => e.id === a.event_id)?.name || '').localeCompare(events.find(e => e.id === b.event_id)?.name || '');
+    else if (sortKey === 'checked') res = (a.checked_in === b.checked_in) ? 0 : (a.checked_in ? -1 : 1);
+    return sortDir === 'asc' ? res : -res;
+  });
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', height: '100%' }}>
@@ -231,20 +225,38 @@ export const ParticipantManagement: React.FC<ParticipantManagementProps> = ({ ra
       {isAdding && (
         <div className="card" style={{ marginBottom: 'var(--space-lg)', border: '1px solid var(--accent)' }}>
           <form onSubmit={handleSubmit} style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: '20px' }}>
-            <div className="flex-row" style={{ flexDirection: 'column', alignItems: 'stretch' }}><label>Bib #</label><input value={form.bib} onChange={e => setForm({...form, bib: e.target.value})} required /></div>
-            <div className="flex-row" style={{ flexDirection: 'column', alignItems: 'stretch' }}><label>Event</label><select value={form.eventID} onChange={e => setForm({...form, eventID: Number(e.target.value)})}>
-                {events.map(ev => <option key={ev.id} value={ev.id}>{ev.name}</option>)}
-            </select></div>
-            <div className="flex-row" style={{ flexDirection: 'column', alignItems: 'stretch' }}><label>First Name</label><input value={form.first} onChange={e => setForm({...form, first: e.target.value})} required /></div>
-            <div className="flex-row" style={{ flexDirection: 'column', alignItems: 'stretch' }}><label>Last Name</label><input value={form.last} onChange={e => setForm({...form, last: e.target.value})} required /></div>
-            <div className="flex-row" style={{ flexDirection: 'column', alignItems: 'stretch' }}><label>Gender</label><select value={form.gender} onChange={e => setForm({...form, gender: e.target.value})}>
-                <option value="M">Male</option><option value="F">Female</option><option value="O">Other</option>
-            </select></div>
-            <div className="flex-row" style={{ flexDirection: 'column', alignItems: 'stretch' }}><label>Age</label><input type="number" value={form.age} onChange={e => setForm({...form, age: e.target.value})} required /></div>
+            <div className="flex-row" style={{ flexDirection: 'column', alignItems: 'stretch' }}>
+                <label style={{ display: 'block', marginBottom: '8px', fontWeight: 600, fontSize: '0.85em', color: 'var(--text-dim)' }}>BIB #</label>
+                <input value={form.bib} onChange={e => setForm({...form, bib: e.target.value})} required />
+            </div>
+            <div className="flex-row" style={{ flexDirection: 'column', alignItems: 'stretch' }}>
+                <label style={{ display: 'block', marginBottom: '8px', fontWeight: 600, fontSize: '0.85em', color: 'var(--text-dim)' }}>EVENT</label>
+                <select value={form.eventID} onChange={e => setForm({...form, eventID: Number(e.target.value)})}>
+                    {events.map(ev => <option key={ev.id} value={ev.id}>{ev.name}</option>)}
+                </select>
+            </div>
+            <div className="flex-row" style={{ flexDirection: 'column', alignItems: 'stretch' }}>
+                <label style={{ display: 'block', marginBottom: '8px', fontWeight: 600, fontSize: '0.85em', color: 'var(--text-dim)' }}>FIRST NAME</label>
+                <input value={form.first} onChange={e => setForm({...form, first: e.target.value})} required />
+            </div>
+            <div className="flex-row" style={{ flexDirection: 'column', alignItems: 'stretch' }}>
+                <label style={{ display: 'block', marginBottom: '8px', fontWeight: 600, fontSize: '0.85em', color: 'var(--text-dim)' }}>LAST NAME</label>
+                <input value={form.last} onChange={e => setForm({...form, last: e.target.value})} required />
+            </div>
+            <div className="flex-row" style={{ flexDirection: 'column', alignItems: 'stretch' }}>
+                <label style={{ display: 'block', marginBottom: '8px', fontWeight: 600, fontSize: '0.85em', color: 'var(--text-dim)' }}>GENDER</label>
+                <select value={form.gender} onChange={e => setForm({...form, gender: e.target.value})}>
+                    <option value="M">Male</option><option value="F">Female</option><option value="O">Other</option>
+                </select>
+            </div>
+            <div className="flex-row" style={{ flexDirection: 'column', alignItems: 'stretch' }}>
+                <label style={{ display: 'block', marginBottom: '8px', fontWeight: 600, fontSize: '0.85em', color: 'var(--text-dim)' }}>AGE</label>
+                <input type="number" value={form.age} onChange={e => setForm({...form, age: e.target.value})} required />
+            </div>
             <div style={{ alignSelf: 'center', paddingTop: '20px' }}>
                 <label style={{ display: 'flex', alignItems: 'center', gap: '10px', cursor: 'pointer' }}>
                     <input type="checkbox" checked={form.checked} onChange={e => setForm({...form, checked: e.target.checked})} style={{ width: 'auto' }} />
-                    <span>Checked In</span>
+                    <span style={{ fontWeight: 600, fontSize: '0.85em', color: 'var(--text-dim)' }}>CHECKED IN</span>
                 </label>
             </div>
             <div style={{ alignSelf: 'center', paddingTop: '20px', textAlign: 'right' }}>
@@ -254,11 +266,11 @@ export const ParticipantManagement: React.FC<ParticipantManagementProps> = ({ ra
         </div>
       )}
 
-      <div className="table-container" style={{ margin: 0 }}>
+      <div className="table-card" style={{ flexGrow: 1, overflowY: 'auto' }}>
         <table style={{ width: '100%', textAlign: 'left', borderCollapse: 'collapse' }}>
           <thead>
             <tr style={{ cursor: 'pointer' }}>
-              <th onClick={() => toggleSort('checked')} style={{ width: '120px' }}>Check-In {sortKey === 'checked' && (sortDir === 'asc' ? '↑' : '↓')}</th>
+              <th onClick={() => toggleSort('checked')} style={{ width: '140px', paddingLeft: 'var(--space-lg)' }}>Check-In {sortKey === 'checked' && (sortDir === 'asc' ? '↑' : '↓')}</th>
               <th onClick={() => toggleSort('bib')}>Bib {sortKey === 'bib' && (sortDir === 'asc' ? '↑' : '↓')}</th>
               <th onClick={() => toggleSort('name')}>Name {sortKey === 'name' && (sortDir === 'asc' ? '↑' : '↓')}</th>
               <th onClick={() => toggleSort('gender')} style={{ width: '60px' }}>G</th>

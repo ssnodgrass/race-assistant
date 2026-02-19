@@ -54,10 +54,10 @@ body, html, #root {
 
 .main-content {
   flex-grow: 1;
-  overflow-y: auto;
   display: flex;
   flex-direction: column;
   height: 100vh;
+  overflow: hidden;
 }
 
 .view-container {
@@ -65,14 +65,15 @@ body, html, #root {
   flex-grow: 1;
   display: flex;
   flex-direction: column;
-  min-height: 0; /* Important for flex child scrolling */
+  min-height: 0;
+  overflow-y: auto;
 }
 
 /* Sidebar Styling */
 .sidebar-header {
   padding: 20px;
   border-bottom: 1px solid var(--border);
-  font-weight: bold;
+  font-weight: 700;
   font-size: 1.1em;
 }
 
@@ -147,15 +148,8 @@ button:hover {
   transform: translateY(-1px);
 }
 
-button:active {
-  transform: translateY(0);
-}
-
-button:disabled {
-  opacity: 0.5;
-  cursor: not-allowed;
-  transform: none;
-}
+button:active { transform: translateY(0); }
+button:disabled { opacity: 0.5; cursor: not-allowed; transform: none; }
 
 input, select {
   background-color: var(--bg-input);
@@ -173,12 +167,11 @@ input:focus, select:focus {
 }
 
 /* Table Styling */
-.table-container {
-  overflow-y: auto;
-  flex-grow: 1;
+.table-card {
+  background-color: var(--bg-card);
   border: 1px solid var(--border);
   border-radius: var(--radius);
-  background-color: var(--bg-card);
+  overflow: hidden;
 }
 
 table {
@@ -188,9 +181,6 @@ table {
 }
 
 th {
-  position: sticky;
-  top: 0;
-  z-index: 10;
   text-align: left;
   padding: 14px var(--space-md);
   color: var(--text-dim);
@@ -207,29 +197,8 @@ td {
   border-bottom: 1px solid var(--border);
 }
 
-tr:last-child td {
-  border-bottom: none;
-}
-
-tr:hover td {
-  background-color: #ffffff05;
-}
-
-/* Scrollbar */
-::-webkit-scrollbar {
-  width: 10px;
-}
-::-webkit-scrollbar-track {
-  background: var(--bg-main);
-}
-::-webkit-scrollbar-thumb {
-  background: #333;
-  border-radius: 5px;
-  border: 2px solid var(--bg-main);
-}
-::-webkit-scrollbar-thumb:hover {
-  background: #444;
-}
+tr:last-child td { border-bottom: none; }
+tr:hover td { background-color: #ffffff05; }
 
 /* Utility Classes */
 .text-dim { color: var(--text-dim); }
@@ -240,10 +209,15 @@ tr:hover td {
 .flex-row { display: flex; gap: var(--space-md); align-items: center; }
 .flex-between { display: flex; justify-content: space-between; align-items: center; }
 
-/* Custom Badge */
 .badge {
   padding: 2px 8px;
   border-radius: 12px;
   font-size: 0.75em;
   font-weight: bold;
 }
+
+/* Scrollbar */
+::-webkit-scrollbar { width: 10px; }
+::-webkit-scrollbar-track { background: var(--bg-main); }
+::-webkit-scrollbar-thumb { background: #333; border-radius: 5px; border: 2px solid var(--bg-main); }
+::-webkit-scrollbar-thumb:hover { background: #444; }

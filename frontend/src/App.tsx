@@ -19,11 +19,10 @@ import { AwardsView } from './components/AwardsView';
 import { CSVImport } from './components/CSVImport';
 import { StopwatchImport } from './components/StopwatchImport';
 import { LiveResults } from './components/LiveResults';
-import { GlobalSettings } from './components/GlobalSettings';
 
 import './index.css';
 
-type View = 'list' | 'race_detail' | 'create_race' | 'manage_events' | 'award_config' | 'participants' | 'placements' | 'times' | 'awards' | 'reporting' | 'import_csv' | 'stopwatch' | 'live_display' | 'global_settings';
+type View = 'list' | 'race_detail' | 'create_race' | 'manage_events' | 'award_config' | 'participants' | 'placements' | 'times' | 'awards' | 'reporting' | 'import_csv' | 'stopwatch' | 'live_display';
 
 function App() {
   const [dbPath, setDbPath] = useState<string>('');
@@ -199,7 +198,6 @@ function App() {
             {dbPath ? (
                 <>
                     <NavItem label="Select Race" target="list" icon="🏁" />
-                    <NavItem label="Global Settings" target="global_settings" icon="🌐" />
                     {selectedRace && (
                         <>
                             <div className="sidebar-divider">Current Race</div>
@@ -251,7 +249,6 @@ function App() {
                 {view === 'create_race' && (
                 <CreateRace onCreated={(r) => { setSelectedRace(r); setView('race_detail'); loadRaces(); }} onCancel={() => setView('list')} />
                 )}
-                {view === 'global_settings' && <GlobalSettings />}
                 {selectedRace && (
                 <div style={{ flexGrow: 1, display: 'flex', flexDirection: 'column', minHeight: 0 }}>
                     {view === 'race_detail' && <RaceDashboard race={selectedRace} events={events} participants={participants} onRefresh={refreshActiveRace} />}
