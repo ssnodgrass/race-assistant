@@ -157,3 +157,22 @@ func (s *ParticipantService) ImportRunSignUpCSV(raceID int, eventID int, filePat
 	mapping := map[string]int{"first_name": 0, "last_name": 1, "gender": 2, "age": 3, "bib": 4}
 	return s.ImportParticipants(raceID, filePath, mapping, 0, eventID, nil)
 }
+
+func (s *ParticipantService) ReassignBibs(raceID int, startBib int) error {
+	participants, err := s.repo.ListByRace(raceID)
+	if err != nil {
+		return err
+	}
+
+	// Sort by Name for a logical sequence
+	// You could also sort by ID or Event if preferred
+	currentBib := startBib
+	for i := range participants {
+		participants[i].BibNumber = strconv.Itoa(currentBib)
+		if err := s.repo.Update(&participants[i]); err != nil {
+			return err
+		}
+		currentBib++
+	}
+	return nil
+}

@@ -36,6 +36,7 @@ func (s *DatabaseService) GetStatus() string {
 }
 
 func (s *DatabaseService) New() {
+	log.Println("[Action] New Database")
 	result, err := s.app.Dialog.OpenFile().
 		SetTitle("Create New Database").
 		AddFilter("Database Files (*.db)", "*.db").
@@ -73,7 +74,6 @@ func (s *DatabaseService) Close() {
 
 func (s *DatabaseService) OpenExternalWindow(view string, raceID int) {
 	log.Printf("[Action] Opening External Window (%s) for Race %d\n", view, raceID)
-	// We create a window with NO reference to the main menu to prevent Linux GTK crashes
 	s.app.Window.NewWithOptions(application.WebviewWindowOptions{
 		Title:  "Race Assistant Display",
 		URL:    fmt.Sprintf("/?view=%s&raceID=%d", view, raceID),
@@ -117,6 +117,7 @@ func main() {
 	eventRepo := repository.NewEventRepository(nil)
 	participantRepo := repository.NewParticipantRepository(nil)
 	timingRepo := repository.NewTimingRepository(nil)
+	settingsRepo := repository.NewSettingsRepository(nil)
 
 	raceService := services.NewRaceService(raceRepo)
 	eventService := services.NewEventService(eventRepo)
@@ -125,6 +126,8 @@ func main() {
 	awardService := services.NewAwardService(eventRepo, timingRepo)
 	reportingService := services.NewReportingService(raceRepo, eventRepo, participantRepo, timingRepo, awardService, timingService)
 	stopwatchService := services.NewStopwatchService(timingRepo)
+	runSignUpService := services.NewRunSignUpService(nil)
+	settingsService := services.NewSettingsService(settingsRepo)
 
 	dbService := &DatabaseService{
 		services: []serviceWithDB{
@@ -135,6 +138,8 @@ func main() {
 			awardService,
 			reportingService,
 			stopwatchService,
+			runSignUpService,
+			settingsService,
 		},
 	}
 
@@ -151,6 +156,12 @@ func main() {
 			w.Header().Set("Content-Type", "application/json")
 			list, _ := raceService.ListRaces()
 			json.NewEncoder(w).Encode(list)
+		})
+		mux.HandleFunc("/api/race", func(w http.ResponseWriter, r *http.Request) {
+			w.Header().Set("Content-Type", "application/json")
+			id, _ := strconv.Atoi(r.URL.Query().Get("id"))
+			race, _ := raceService.GetByID(id)
+			json.NewEncoder(w).Encode(race)
 		})
 		mux.HandleFunc("/api/events", func(w http.ResponseWriter, r *http.Request) {
 			w.Header().Set("Content-Type", "application/json")
@@ -170,6 +181,31 @@ func main() {
 			list, _ := timingService.GetEventResults(eventID)
 			json.NewEncoder(w).Encode(list)
 		})
+		mux.HandleFunc("/api/runsignup/events", func(w http.ResponseWriter, r *http.Request) {
+			w.Header().Set("Content-Type", "application/json")
+			rsuRaceID := r.URL.Query().Get("rsuRaceID")
+			apiKey, _ := settingsService.Get("rsu_api_key")
+			apiSecret, _ := settingsService.Get("rsu_api_secret")
+			events, err := runSignUpService.GetRSUEvents(rsuRaceID, apiKey, apiSecret)
+			if err != nil {
+				http.Error(w, err.Error(), http.StatusInternalServerError)
+				return
+			}
+			json.NewEncoder(w).Encode(events)
+		})
+		mux.HandleFunc("/api/runsignup/participants", func(w http.ResponseWriter, r *http.Request) {
+			w.Header().Set("Content-Type", "application/json")
+			rsuRaceID := r.URL.Query().Get("rsuRaceID")
+			rsuEventID := r.URL.Query().Get("rsuEventID")
+			apiKey, _ := settingsService.Get("rsu_api_key")
+			apiSecret, _ := settingsService.Get("rsu_api_secret")
+			participants, err := runSignUpService.GetParticipants(rsuRaceID, rsuEventID, apiKey, apiSecret)
+			if err != nil {
+				http.Error(w, err.Error(), http.StatusInternalServerError)
+				return
+			}
+			json.NewEncoder(w).Encode(participants)
+		})
 		log.Println("Web Hub Server started on :8080")
 		http.ListenAndServe(":8080", mux)
 	}()
@@ -185,6 +221,8 @@ func main() {
 			application.NewService(awardService),
 			application.NewService(reportingService),
 			application.NewService(stopwatchService),
+			application.NewService(runSignUpService),
+			application.NewService(settingsService),
 			application.NewService(dbService),
 		},
 		Assets: application.AssetOptions{

@@ -1,6 +1,6 @@
-import React, { useState } from 'react';
-import { EventService } from '../../bindings/github.com/ssnodgrass/race-assistant/services';
-import { Event as RaceEvent } from '../../bindings/github.com/ssnodgrass/race-assistant/models';
+import React, { useState, useEffect } from 'react';
+import { EventService, RunSignUpService, RaceService, SettingsService } from '../../bindings/github.com/ssnodgrass/race-assistant/services';
+import { Event as RaceEvent, RSUEvent } from '../../bindings/github.com/ssnodgrass/race-assistant/models';
 
 interface EventManagementProps {
   raceID: number;
@@ -9,83 +9,129 @@ interface EventManagementProps {
 }
 
 export const EventManagement: React.FC<EventManagementProps> = ({ raceID, events, onRefresh }) => {
-  const [name, setName] = useState('');
-  const [distance, setDistance] = useState('5.0');
+  const [isAdding, setIsAdding] = useState(false);
   const [editingID, setEditingID] = useState<number | null>(null);
+  const [rsuEvents, setRsuEvents] = useState<RSUEvent[]>([]);
+  const [form, setForm] = useState({ name: '', distance: '5.0', rsuEventID: '' });
 
-  const handleAddOrUpdate = (e: React.FormEvent) => {
-    e.preventDefault();
-    const ev = new RaceEvent({
-      id: editingID || 0,
-      race_id: raceID,
-      name,
-      distance_km: parseFloat(distance)
-    });
+  useEffect(() => {
+    loadRSUEvents();
+  }, [raceID]);
 
-    const action = editingID ? EventService.UpdateEvent(ev) : EventService.CreateEvent(ev);
+  const loadRSUEvents = async () => {
+    try {
+        const [race, apiKey, apiSecret] = await Promise.all([
+            RaceService.GetByID(raceID),
+            SettingsService.Get('rsu_api_key'),
+            SettingsService.Get('rsu_api_secret')
+        ]);
 
-    action.then(() => {
-        setName('');
-        setDistance('5.0');
-        setEditingID(null);
-        onRefresh();
-      })
-      .catch(console.error);
+        if (race?.rsu?.race_id && apiKey && apiSecret) {
+            const list = await RunSignUpService.GetRSUEvents(race.rsu.race_id, apiKey, apiSecret);
+            setRsuEvents(list || []);
+        }
+    } catch (e) { console.error("Failed to load RSU events:", e); }
+  };
+
+  const resetForm = () => {
+    setForm({ name: '', distance: '5.0', rsuEventID: '' });
+    setEditingID(null);
   };
 
   const handleEdit = (ev: RaceEvent) => {
     setEditingID(ev.id);
-    setName(ev.name);
-    setDistance(ev.distance_km.toString());
+    setForm({ 
+        name: ev.name, 
+        distance: ev.distance_km.toString(),
+        rsuEventID: ev.runsignup_event_id || ''
+    });
+    setIsAdding(true);
   };
 
-  const handleDelete = (ev: RaceEvent) => {
-    if (window.confirm(`Are you sure you want to delete ${ev.name}?`)) {
-        EventService.DeleteEvent(ev.id)
-            .then(onRefresh)
-            .catch(err => alert(err));
+  const handleDelete = (id: number, name: string) => {
+    if (window.confirm(`Delete event "${name}"?`)) {
+        EventService.DeleteEvent(id).then(onRefresh).catch(err => alert("Cannot delete: " + err));
     }
+  };
+
+  const handleSubmit = (e: React.FormEvent) => {
+    e.preventDefault();
+    const ev = new RaceEvent({
+        id: editingID || 0,
+        race_id: raceID,
+        name: form.name,
+        distance_km: parseFloat(form.distance) || 0,
+        runsignup_event_id: form.rsuEventID
+    });
+
+    const action = editingID ? EventService.UpdateEvent(ev) : EventService.CreateEvent(ev);
+    action.then(() => {
+        setIsAdding(false);
+        resetForm();
+        onRefresh();
+    }).catch(console.error);
   };
 
   return (
     <div>
-      <div style={{ marginBottom: '20px' }}>
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '20px' }}>
         <h2>Manage Events</h2>
-      </div>
-      <div className="card" style={{ marginBottom: '20px', border: editingID ? '1px solid var(--accent)' : 'none' }}>
-        <h3>{editingID ? 'Edit Event' : 'Add New Event'}</h3>
-        <form onSubmit={handleAddOrUpdate} style={{ display: 'flex', gap: '15px', alignItems: 'flex-end' }}>
-          <div style={{ flex: 2 }}>
-            <label>Event Name (e.g. 5K Run):</label><br/>
-            <input style={{ width: '100%' }} placeholder="e.g. 5K Run" value={name} onChange={e => setName(e.target.value)} required />
-          </div>
-          <div style={{ flex: 1 }}>
-            <label>Distance (Kilometers):</label><br/>
-            <input type="number" step="0.001" value={distance} onChange={e => setDistance(e.target.value)} required style={{ width: '100%' }} />
-          </div>
-          <button type="submit">{editingID ? 'Update' : 'Add Event'}</button>
-          {editingID && <button type="button" onClick={() => { setEditingID(null); setName(''); setDistance('5.0'); }} style={{ backgroundColor: '#444' }}>Cancel</button>}
-        </form>
+        <button onClick={() => { if(isAdding) resetForm(); setIsAdding(!isAdding); }}>
+            {isAdding ? 'Cancel' : '+ Add Event'}
+        </button>
       </div>
 
+      {isAdding && (
+        <div className="card" style={{ marginBottom: '20px', border: '1px solid var(--accent)' }}>
+            <h3>{editingID ? 'Edit Event' : 'New Event'}</h3>
+            <form onSubmit={handleSubmit} style={{ display: 'flex', gap: '20px', alignItems: 'flex-end' }}>
+                <div>
+                    <label>Event Name:</label><br/>
+                    <input value={form.name} onChange={e => setForm({...form, name: e.target.value})} required placeholder="e.g. 5K Run" />
+                </div>
+                <div>
+                    <label>Distance (KM):</label><br/>
+                    <input type="number" step="0.01" value={form.distance} onChange={e => setForm({...form, distance: e.target.value})} required style={{ width: '80px' }} />
+                </div>
+                <div>
+                    <label>RunSignUp Mapping:</label><br/>
+                    <select value={form.rsuEventID} onChange={e => setForm({...form, rsuEventID: e.target.value})} style={{ minWidth: '200px' }}>
+                        <option value="">-- No Mapping --</option>
+                        {rsuEvents.map(re => (
+                            <option key={re.event_id} value={re.event_id.toString()}>{re.name} ({re.start_time})</option>
+                        ))}
+                    </select>
+                </div>
+                <button type="submit">{editingID ? 'Save Changes' : 'Create Event'}</button>
+            </form>
+        </div>
+      )}
+
       <div className="card">
-        <h3>Current Events</h3>
-        <table>
-            <thead><tr><th>Event Name</th><th>Distance (km)</th><th style={{ textAlign: 'right' }}>Actions</th></tr></thead>
+        <table style={{ width: '100%', textAlign: 'left' }}>
+            <thead>
+                <tr><th>Name</th><th>Distance</th><th>RunSignUp ID</th><th style={{ textAlign: 'right' }}>Actions</th></tr>
+            </thead>
             <tbody>
                 {events.map(ev => (
                     <tr key={ev.id}>
                         <td><strong>{ev.name}</strong></td>
-                        <td>{ev.distance_km} km</td>
+                        <td>{ev.distance_km} KM</td>
+                        <td>
+                            {ev.runsignup_event_id ? (
+                                <span style={{ color: 'var(--success)' }}>🔗 {ev.runsignup_event_id}</span>
+                            ) : (
+                                <span style={{ color: 'var(--text-dim)' }}>None</span>
+                            )}
+                        </td>
                         <td style={{ textAlign: 'right' }}>
-                            <button onClick={() => handleEdit(ev)} style={{ padding: '2px 8px', marginRight: '5px', backgroundColor: '#444' }}>Edit</button>
-                            <button onClick={() => handleDelete(ev)} style={{ padding: '2px 8px', backgroundColor: 'var(--danger)' }}>Delete</button>
+                            <button onClick={() => handleEdit(ev)} style={{ backgroundColor: '#444', marginRight: '5px' }}>Edit</button>
+                            <button onClick={() => handleDelete(ev.id, ev.name)} style={{ backgroundColor: '#a33' }}>Del</button>
                         </td>
                     </tr>
                 ))}
             </tbody>
         </table>
-        {events.length === 0 && <p style={{ textAlign: 'center', padding: '20px' }}>No events added yet.</p>}
       </div>
     </div>
   );

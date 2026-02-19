@@ -29,8 +29,8 @@ func (r *EventRepository) checkDB() error {
 
 func (r *EventRepository) Create(e *models.Event) error {
 	if err := r.checkDB(); err != nil { return err }
-	res, err := r.db.Exec("INSERT INTO events (race_id, name, distance_km) VALUES (?, ?, ?)",
-		e.RaceID, e.Name, e.DistanceKM)
+	res, err := r.db.Exec("INSERT INTO events (race_id, name, distance_km, runsignup_event_id) VALUES (?, ?, ?, ?)",
+		e.RaceID, e.Name, e.DistanceKM, e.RunSignUpEventID)
 	if err != nil {
 		return err
 	}
@@ -42,8 +42,8 @@ func (r *EventRepository) Create(e *models.Event) error {
 func (r *EventRepository) GetByID(id int) (*models.Event, error) {
 	if err := r.checkDB(); err != nil { return nil, err }
 	var e models.Event
-	err := r.db.QueryRow("SELECT id, race_id, name, distance_km FROM events WHERE id = ?", id).
-		Scan(&e.ID, &e.RaceID, &e.Name, &e.DistanceKM)
+	err := r.db.QueryRow("SELECT id, race_id, name, distance_km, COALESCE(runsignup_event_id, '') FROM events WHERE id = ?", id).
+		Scan(&e.ID, &e.RaceID, &e.Name, &e.DistanceKM, &e.RunSignUpEventID)
 	if err != nil {
 		return nil, err
 	}
@@ -52,7 +52,7 @@ func (r *EventRepository) GetByID(id int) (*models.Event, error) {
 
 func (r *EventRepository) ListByRace(raceID int) ([]models.Event, error) {
 	if err := r.checkDB(); err != nil { return nil, err }
-	rows, err := r.db.Query("SELECT id, race_id, name, distance_km FROM events WHERE race_id = ?", raceID)
+	rows, err := r.db.Query("SELECT id, race_id, name, distance_km, COALESCE(runsignup_event_id, '') FROM events WHERE race_id = ?", raceID)
 	if err != nil {
 		return nil, err
 	}
@@ -60,7 +60,7 @@ func (r *EventRepository) ListByRace(raceID int) ([]models.Event, error) {
 	var events []models.Event
 	for rows.Next() {
 		var e models.Event
-		if err := rows.Scan(&e.ID, &e.RaceID, &e.Name, &e.DistanceKM); err != nil {
+		if err := rows.Scan(&e.ID, &e.RaceID, &e.Name, &e.DistanceKM, &e.RunSignUpEventID); err != nil {
 			return nil, err
 		}
 		events = append(events, e)
@@ -70,7 +70,7 @@ func (r *EventRepository) ListByRace(raceID int) ([]models.Event, error) {
 
 func (r *EventRepository) Update(e *models.Event) error {
 	if err := r.checkDB(); err != nil { return err }
-	_, err := r.db.Exec("UPDATE events SET name=?, distance_km=? WHERE id=?", e.Name, e.DistanceKM, e.ID)
+	_, err := r.db.Exec("UPDATE events SET name=?, distance_km=?, runsignup_event_id=? WHERE id=?", e.Name, e.DistanceKM, e.RunSignUpEventID, e.ID)
 	return err
 }
 

@@ -29,8 +29,9 @@ func (r *RaceRepository) checkDB() error {
 // Race CRUD
 func (r *RaceRepository) Create(race *models.Race) error {
 	if err := r.checkDB(); err != nil { return err }
-	res, err := r.db.Exec("INSERT INTO races (name, date, start_time) VALUES (?, ?, ?)",
-		race.Name, race.Date, race.StartTime)
+	res, err := r.db.Exec(`INSERT INTO races (name, date, start_time, runsignup_race_id) 
+		VALUES (?, ?, ?, ?)`,
+		race.Name, race.Date, race.StartTime, race.RSU.RaceID)
 	if err != nil {
 		return err
 	}
@@ -42,8 +43,9 @@ func (r *RaceRepository) Create(race *models.Race) error {
 func (r *RaceRepository) GetByID(id int) (*models.Race, error) {
 	if err := r.checkDB(); err != nil { return nil, err }
 	var race models.Race
-	err := r.db.QueryRow("SELECT id, name, date, start_time FROM races WHERE id = ?", id).
-		Scan(&race.ID, &race.Name, &race.Date, &race.StartTime)
+	err := r.db.QueryRow(`SELECT id, name, date, start_time, COALESCE(runsignup_race_id, '') 
+		FROM races WHERE id = ?`, id).
+		Scan(&race.ID, &race.Name, &race.Date, &race.StartTime, &race.RSU.RaceID)
 	if err != nil {
 		return nil, err
 	}
@@ -52,8 +54,8 @@ func (r *RaceRepository) GetByID(id int) (*models.Race, error) {
 
 func (r *RaceRepository) Update(race *models.Race) error {
 	if err := r.checkDB(); err != nil { return err }
-	_, err := r.db.Exec("UPDATE races SET name=?, date=?, start_time=? WHERE id=?",
-		race.Name, race.Date, race.StartTime, race.ID)
+	_, err := r.db.Exec(`UPDATE races SET name=?, date=?, start_time=?, runsignup_race_id=? WHERE id=?`,
+		race.Name, race.Date, race.StartTime, race.RSU.RaceID, race.ID)
 	return err
 }
 
@@ -65,7 +67,7 @@ func (r *RaceRepository) Delete(id int) error {
 
 func (r *RaceRepository) List() ([]models.Race, error) {
 	if err := r.checkDB(); err != nil { return nil, err }
-	rows, err := r.db.Query("SELECT id, name, date, start_time FROM races")
+	rows, err := r.db.Query(`SELECT id, name, date, start_time, COALESCE(runsignup_race_id, '') FROM races`)
 	if err != nil {
 		return nil, err
 	}
@@ -73,7 +75,7 @@ func (r *RaceRepository) List() ([]models.Race, error) {
 	var races []models.Race
 	for rows.Next() {
 		var rc models.Race
-		if err := rows.Scan(&rc.ID, &rc.Name, &rc.Date, &rc.StartTime); err != nil {
+		if err := rows.Scan(&rc.ID, &rc.Name, &rc.Date, &rc.StartTime, &rc.RSU.RaceID); err != nil {
 			return nil, err
 		}
 		races = append(races, rc)

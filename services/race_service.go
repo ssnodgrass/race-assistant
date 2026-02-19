@@ -23,6 +23,10 @@ func (s *RaceService) ListRaces() ([]models.Race, error) {
 	return s.repo.List()
 }
 
+func (s *RaceService) GetByID(id int) (*models.Race, error) {
+	return s.repo.GetByID(id)
+}
+
 func (s *RaceService) CreateRace(race models.Race) (models.Race, error) {
 	err := s.repo.Create(&race)
 	return race, err

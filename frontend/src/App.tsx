@@ -19,10 +19,11 @@ import { AwardsView } from './components/AwardsView';
 import { CSVImport } from './components/CSVImport';
 import { StopwatchImport } from './components/StopwatchImport';
 import { LiveResults } from './components/LiveResults';
+import { GlobalSettings } from './components/GlobalSettings';
 
 import './index.css';
 
-type View = 'list' | 'race_detail' | 'create_race' | 'manage_events' | 'award_config' | 'participants' | 'placements' | 'times' | 'awards' | 'reporting' | 'import_csv' | 'stopwatch' | 'live_display';
+type View = 'list' | 'race_detail' | 'create_race' | 'manage_events' | 'award_config' | 'participants' | 'placements' | 'times' | 'awards' | 'reporting' | 'import_csv' | 'stopwatch' | 'live_display' | 'global_settings';
 
 function App() {
   const [dbPath, setDbPath] = useState<string>('');
@@ -32,13 +33,12 @@ function App() {
   const [events, setEvents] = useState<Event[]>([]);
   const [participants, setParticipants] = useState<Participant[]>([]);
   const [isExternalDisplay, setIsExternalDisplay] = useState(false);
-  const [, setExternalMode] = useState<'live_display' | 'awards' | 'reporting'>('live_display');
   const isBrowserMode = !(window as any).wails;
 
   const selectedRaceRef = useRef<Race | null>(null);
   useEffect(() => { selectedRaceRef.current = selectedRace; }, [selectedRace]);
 
-  const checkBackendStatus = () => {
+  const checkStatus = () => {
     const isWeb = !(window as any).wails;
     const statusCall = isWeb 
         ? fetch("/api/status").then(r => r.json()).then(d => d.dbPath)
@@ -48,7 +48,6 @@ function App() {
         if (path) {
             const isNewPath = path !== dbPath;
             if (isNewPath) setDbPath(path);
-            
             if (isNewPath || races.length === 0) {
                 loadRaces().then(list => {
                     const params = new URLSearchParams(window.location.search);
@@ -66,14 +65,13 @@ function App() {
   };
 
   useEffect(() => {
-    checkBackendStatus();
-    const heartbeat = setInterval(checkBackendStatus, 3000);
+    checkStatus();
+    const heartbeat = setInterval(checkStatus, 3000);
 
     const params = new URLSearchParams(window.location.search);
     const viewParam = params.get('view');
     if (viewParam) {
         setIsExternalDisplay(true);
-        setExternalMode(viewParam as any);
         setView(viewParam as View);
     }
 
@@ -183,6 +181,7 @@ function App() {
             {dbPath ? (
                 <>
                     <NavItem label="Select Race" target="list" icon="🏁" />
+                    <NavItem label="Global Settings" target="global_settings" icon="🌐" />
                     {selectedRace && (
                         <>
                             <div className="sidebar-divider">Current Race</div>
@@ -234,6 +233,7 @@ function App() {
                 {view === 'create_race' && (
                 <CreateRace onCreated={(r) => { setSelectedRace(r); setView('race_detail'); loadRaces(); }} onCancel={() => setView('list')} />
                 )}
+                {view === 'global_settings' && <GlobalSettings />}
                 {selectedRace && (
                 <div className="view-container">
                     {view === 'race_detail' && <RaceDashboard race={selectedRace} events={events} participants={participants} onRefresh={refreshActiveRace} />}
@@ -245,7 +245,7 @@ function App() {
                     {view === 'awards' && <AwardsView events={events} mode="awards" />}
                     {view === 'reporting' && <AwardsView events={events} mode="standings" />}
                     {view === 'stopwatch' && <StopwatchImport raceID={selectedRace.id} onComplete={() => setView('race_detail')} />}
-                    {view === 'live_display' && <LiveResults events={events} selectedRace={selectedRace} onRefresh={refreshActiveRace} />}
+                    {view === 'live_display' && <LiveResults events={events} selectedRace={selectedRace} onRefresh={refreshActiveRace} isBrowser={isBrowserMode} />}
                     {view === 'import_csv' && (
                         <CSVImport raceID={selectedRace.id} events={events} onComplete={(count) => { loadRaceDetails(selectedRace.id); setView('participants'); }} onCancel={() => setView('participants')} />
                     )}

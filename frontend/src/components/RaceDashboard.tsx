@@ -12,6 +12,7 @@ interface RaceDashboardProps {
 export const RaceDashboard: React.FC<RaceDashboardProps> = ({ race, events, participants, onRefresh }) => {
   const [elapsed, setElapsed] = useState('00:00:00');
   const [manualTime, setManualTime] = useState('00:00:00');
+  const [rsuRaceID, setRsuRaceID] = useState(race.rsu?.race_id || '');
 
   useEffect(() => {
     if (!race.start_time) {
@@ -39,6 +40,10 @@ export const RaceDashboard: React.FC<RaceDashboardProps> = ({ race, events, part
     return () => clearInterval(timer);
   }, [race.start_time]);
 
+  useEffect(() => {
+    setRsuRaceID(race.rsu?.race_id || '');
+  }, [race.id, race.rsu]);
+
   const handleStart = () => {
     const parts = manualTime.split(':');
     if (parts.length !== 3) return alert("Use HH:MM:SS format");
@@ -60,6 +65,19 @@ export const RaceDashboard: React.FC<RaceDashboardProps> = ({ race, events, part
     if (window.confirm("Reset the race clock? This will clear the start time.")) {
         RaceService.ResetRace(race.id).then(onRefresh).catch(console.error);
     }
+  };
+
+  const handleSaveRSU = () => {
+    const r = new Race({ 
+        ...race, 
+        rsu: {
+            race_id: rsuRaceID
+        }
+    });
+    RaceService.UpdateRace(r).then(() => {
+        alert("Race ID Saved");
+        onRefresh();
+    }).catch(console.error);
   };
 
   return (
@@ -105,6 +123,18 @@ export const RaceDashboard: React.FC<RaceDashboardProps> = ({ race, events, part
           <h3>Participants</h3>
           <p style={{ fontSize: '2.5em', fontWeight: 'bold', margin: '10px 0' }}>{participants.length}</p>
           <p style={{ color: 'var(--text-dim)' }}>Total runners registered across all events.</p>
+        </div>
+
+        <div className="card" style={{ borderTop: '4px solid var(--accent)' }}>
+            <h3>RunSignUp Link</h3>
+            <div style={{ marginBottom: '15px' }}>
+                <label>RunSignUp Race ID:</label><br/>
+                <input value={rsuRaceID} onChange={e => setRsuRaceID(e.target.value)} style={{ width: '100%' }} placeholder="e.g. 54529" />
+            </div>
+            <button onClick={handleSaveRSU} style={{ width: '100%', backgroundColor: 'var(--accent)' }}>Link Race</button>
+            <p style={{ fontSize: '0.8em', color: 'var(--text-dim)', marginTop: '10px' }}>
+                Ensure your API Key and Secret are set in <strong>Global Settings</strong>.
+            </p>
         </div>
       </div>
     </div>

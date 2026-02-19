@@ -27,7 +27,9 @@ func (r *TimingRepository) checkDB() error {
 }
 
 func (r *TimingRepository) CreatePulse(p *models.TimingPulse) error {
-	if err := r.checkDB(); err != nil { return err }
+	if err := r.checkDB(); err != nil {
+		return err
+	}
 	res, err := r.db.Exec("INSERT INTO timing_pulses (race_id, place, raw_time) VALUES (?, ?, ?)",
 		p.RaceID, p.Place, p.RawTime)
 	if err != nil {
@@ -39,20 +41,26 @@ func (r *TimingRepository) CreatePulse(p *models.TimingPulse) error {
 }
 
 func (r *TimingRepository) UpdatePulse(p *models.TimingPulse) error {
-	if err := r.checkDB(); err != nil { return err }
+	if err := r.checkDB(); err != nil {
+		return err
+	}
 	_, err := r.db.Exec("UPDATE timing_pulses SET place=?, raw_time=? WHERE id=?",
 		p.Place, p.RawTime, p.ID)
 	return err
 }
 
 func (r *TimingRepository) DeletePulse(id int) error {
-	if err := r.checkDB(); err != nil { return err }
+	if err := r.checkDB(); err != nil {
+		return err
+	}
 	_, err := r.db.Exec("DELETE FROM timing_pulses WHERE id = ?", id)
 	return err
 }
 
 func (r *TimingRepository) ListPulses(raceID int) ([]models.TimingPulse, error) {
-	if err := r.checkDB(); err != nil { return nil, err }
+	if err := r.checkDB(); err != nil {
+		return nil, err
+	}
 	rows, err := r.db.Query("SELECT id, race_id, place, raw_time FROM timing_pulses WHERE race_id = ? ORDER BY place ASC", raceID)
 	if err != nil {
 		return nil, err
@@ -70,7 +78,9 @@ func (r *TimingRepository) ListPulses(raceID int) ([]models.TimingPulse, error) 
 }
 
 func (r *TimingRepository) GetBibAssignment(raceID int, bibNumber string) (int, error) {
-	if err := r.checkDB(); err != nil { return 0, err }
+	if err := r.checkDB(); err != nil {
+		return 0, err
+	}
 	var place int
 	err := r.db.QueryRow("SELECT place FROM chute_assignments WHERE race_id = ? AND bib_number = ?", raceID, bibNumber).Scan(&place)
 	if err == sql.ErrNoRows {
@@ -80,41 +90,53 @@ func (r *TimingRepository) GetBibAssignment(raceID int, bibNumber string) (int, 
 }
 
 func (r *TimingRepository) UpsertChuteAssignment(ca *models.ChuteAssignment) error {
-	if err := r.checkDB(); err != nil { return err }
+	if err := r.checkDB(); err != nil {
+		return err
+	}
 	_, err := r.db.Exec("INSERT OR REPLACE INTO chute_assignments (race_id, place, bib_number, unofficial_time) VALUES (?, ?, ?, ?)",
 		ca.RaceID, ca.Place, ca.BibNumber, ca.UnofficialTime)
 	return err
 }
 
 func (r *TimingRepository) DeleteChuteAssignment(raceID, place int) error {
-	if err := r.checkDB(); err != nil { return err }
+	if err := r.checkDB(); err != nil {
+		return err
+	}
 	_, err := r.db.Exec("DELETE FROM chute_assignments WHERE race_id = ? AND place = ?", raceID, place)
 	return err
 }
 
 func (r *TimingRepository) DeleteBibAssignment(raceID int, bibNumber string) error {
-	if err := r.checkDB(); err != nil { return err }
+	if err := r.checkDB(); err != nil {
+		return err
+	}
 	_, err := r.db.Exec("DELETE FROM chute_assignments WHERE race_id = ? AND bib_number = ?", raceID, bibNumber)
 	return err
 }
 
 func (r *TimingRepository) ShiftPlacements(raceID int, startPlace int, delta int) error {
-	if err := r.checkDB(); err != nil { return err }
+	if err := r.checkDB(); err != nil {
+		return err
+	}
 
 	tx, err := r.db.Begin()
-	if err != nil { return err }
+	if err != nil {
+		return err
+	}
 	defer tx.Rollback()
 
 	rows, err := tx.Query("SELECT place, bib_number, unofficial_time FROM chute_assignments WHERE race_id = ? AND place >= ? ORDER BY place DESC", raceID, startPlace)
 	if delta < 0 {
 		rows, err = tx.Query("SELECT place, bib_number, unofficial_time FROM chute_assignments WHERE race_id = ? AND place >= ? ORDER BY place ASC", raceID, startPlace)
 	}
-	if err != nil { return err }
-	
-	type entry struct { 
-		p int; 
-		b string;
-		t string;
+	if err != nil {
+		return err
+	}
+
+	type entry struct {
+		p int
+		b string
+		t string
 	}
 	var entries []entry
 	for rows.Next() {
@@ -126,16 +148,22 @@ func (r *TimingRepository) ShiftPlacements(raceID int, startPlace int, delta int
 
 	for _, e := range entries {
 		_, err = tx.Exec("DELETE FROM chute_assignments WHERE race_id = ? AND place = ?", raceID, e.p)
-		if err != nil { return err }
+		if err != nil {
+			return err
+		}
 		_, err = tx.Exec("INSERT INTO chute_assignments (race_id, place, bib_number, unofficial_time) VALUES (?, ?, ?, ?)", raceID, e.p+delta, e.b, e.t)
-		if err != nil { return err }
+		if err != nil {
+			return err
+		}
 	}
 
 	return tx.Commit()
 }
 
 func (r *TimingRepository) ListPlacements(raceID int) ([]models.ChuteAssignment, error) {
-	if err := r.checkDB(); err != nil { return nil, err }
+	if err := r.checkDB(); err != nil {
+		return nil, err
+	}
 	rows, err := r.db.Query("SELECT race_id, place, bib_number, unofficial_time FROM chute_assignments WHERE race_id = ? ORDER BY place ASC", raceID)
 	if err != nil {
 		return nil, err
@@ -153,7 +181,9 @@ func (r *TimingRepository) ListPlacements(raceID int) ([]models.ChuteAssignment,
 }
 
 func (r *TimingRepository) GetReconciledResultsByRace(raceID int) ([]models.Result, error) {
-	if err := r.checkDB(); err != nil { return nil, err }
+	if err := r.checkDB(); err != nil {
+		return nil, err
+	}
 	query := `
 		SELECT 
 			ca.place as chute_place, 
@@ -198,7 +228,9 @@ func (r *TimingRepository) GetReconciledResultsByRace(raceID int) ([]models.Resu
 }
 
 func (r *TimingRepository) GetReconciledResultsByEvent(eventID int) ([]models.Result, error) {
-	if err := r.checkDB(); err != nil { return nil, err }
+	if err := r.checkDB(); err != nil {
+		return nil, err
+	}
 	query := `
 		SELECT 
 			ca.place as chute_place, 

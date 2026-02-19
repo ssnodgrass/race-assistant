@@ -24,6 +24,9 @@ func (r *SettingsRepository) Set(key, value string) error {
 func (r *SettingsRepository) Get(key string) (string, error) {
 	var value string
 	err := r.db.QueryRow("SELECT value FROM settings WHERE key = ?", key).Scan(&value)
+	if err == sql.ErrNoRows {
+		return "", nil // Return empty string if key doesn't exist, not an error
+	}
 	if err != nil {
 		return "", err
 	}

@@ -2,18 +2,55 @@ package models
 
 import "time"
 
-type Race struct {
-	ID        int        `json:"id"`
-	Name      string     `json:"name"`
-	Date      time.Time  `json:"date"`
-	StartTime *time.Time `json:"start_time"`
+// RaceRSUSettings stores credentials for RunSignUp integration
+type RaceRSUSettings struct {
+	RaceID string `json:"race_id"`
 }
 
+// Race struct
+type Race struct {
+	ID        int             `json:"id"`
+	Name      string          `json:"name"`
+	Date      time.Time       `json:"date"`
+	StartTime *time.Time      `json:"start_time"`
+	RSU       RaceRSUSettings `json:"rsu"`
+}
+
+// Event struct
 type Event struct {
-	ID         int     `json:"id"`
-	RaceID     int     `json:"race_id"`
-	Name       string  `json:"name"`
-	DistanceKM float64 `json:"distance_km"`
+	ID               int     `json:"id"`
+	RaceID           int     `json:"race_id"`
+	Name             string  `json:"name"`
+	DistanceKM       float64 `json:"distance_km"`
+	RunSignUpEventID string  `json:"runsignup_event_id"`
+}
+
+// RSUEvent mapping
+type RSUEvent struct {
+	ID        int    `json:"event_id"`
+	Name      string `json:"name"`
+	StartTime string `json:"start_time"`
+}
+
+// RSU API Response structs
+type RSUUser struct {
+	FirstName string `json:"first_name"`
+	LastName  string `json:"last_name"`
+	Email     string `json:"email"`
+	DOB       string `json:"dob"`
+	Gender    string `json:"gender"`
+	Phone     string `json:"phone"`
+}
+
+type RSURegistration struct {
+	User     RSUUser `json:"user"`
+	BibNum   *string `json:"bib_num"`
+	Age      int     `json:"age"`
+	TeamName *string `json:"team_name"`
+}
+
+type RSUEventParticipants struct {
+	Participants []RSURegistration `json:"participants"`
 }
 
 type Participant struct {
@@ -44,7 +81,7 @@ type ChuteAssignment struct {
 	RaceID         int    `json:"race_id"`
 	Place          int    `json:"place"`
 	BibNumber      string `json:"bib_number"`
-	UnofficialTime string `json:"unofficial_time"` // Captured at point of entry
+	UnofficialTime string `json:"unofficial_time"`
 }
 
 type AgeGroup struct {
