@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { ParticipantService, ReportingService, RunSignUpService, RaceService, SettingsService } from '../../bindings/github.com/ssnodgrass/race-assistant/services';
 import { DatabaseService } from '../../bindings/github.com/ssnodgrass/race-assistant';
-import { Participant, Event as RaceEvent, Race, RSUEvent } from '../../bindings/github.com/ssnodgrass/race-assistant/models';
+import { Participant, Event as RaceEvent, RSUEvent, Race } from '../../bindings/github.com/ssnodgrass/race-assistant/models';
 
 interface ParticipantManagementProps {
   raceID: number;
@@ -22,7 +22,7 @@ export const ParticipantManagement: React.FC<ParticipantManagementProps> = ({ ra
 
   // RSU Import State
   const [rsuEvents, setRsuEvents] = useState<RSUEvent[]>([]);
-  const [eventMappings, setEventMappings] = useState<Record<number, number>>({}); // RSU Event ID -> Local Event ID
+  const [eventMappings, setEventMappings] = useState<Record<number, number>>({}); 
   const [startBib, setStartBib] = useState('100');
 
   const isBrowser = !(window as any).wails;
@@ -38,12 +38,22 @@ export const ParticipantManagement: React.FC<ParticipantManagementProps> = ({ ra
             SettingsService.Get('rsu_api_key'),
             SettingsService.Get('rsu_api_secret')
         ]);
+
         if (race?.rsu?.race_id && apiKey && apiSecret) {
             const list = await RunSignUpService.GetRSUEvents(race.rsu.race_id, apiKey, apiSecret);
-            setRsuEvents(list || []);
-            // Default mapping: try to match names
+            
+            // FILTER BY YEAR: Only show events matching the year of the local race
+            const localRaceYear = new Date(race.date).getFullYear();
+            const filtered = (list || []).filter(re => {
+                const rsuEventDate = new Date(re.start_time);
+                return rsuEventDate.getFullYear() === localRaceYear;
+            });
+
+            setRsuEvents(filtered);
+
+            // Default mapping logic
             const initialMap: Record<number, number> = {};
-            list?.forEach(re => {
+            filtered.forEach(re => {
                 const match = events.find(le => le.name.toLowerCase() === re.name.toLowerCase());
                 if (match) initialMap[re.event_id] = match.id;
             });
@@ -59,7 +69,7 @@ export const ParticipantManagement: React.FC<ParticipantManagementProps> = ({ ra
         SettingsService.Get('rsu_api_secret')
     ]);
 
-    if (!race?.rsu?.race_id || !apiKey || !apiSecret) return alert("Credentials missing!");
+    if (!race?.rsu?.race_id || !apiKey || !apiSecret) return alert("RunSignUp credentials missing!");
 
     setIsSyncing(true);
     let total = 0;
@@ -68,7 +78,7 @@ export const ParticipantManagement: React.FC<ParticipantManagementProps> = ({ ra
     try {
         for (const rsuEv of rsuEvents) {
             const localEventID = eventMappings[rsuEv.event_id];
-            if (!localEventID) continue; // Skip unmapped events
+            if (!localEventID) continue; 
 
             const incoming = await RunSignUpService.GetParticipants(race.rsu.race_id, rsuEv.event_id.toString(), apiKey, apiSecret);
             for (const p of incoming) {
@@ -90,10 +100,10 @@ export const ParticipantManagement: React.FC<ParticipantManagementProps> = ({ ra
                 }
             }
         }
-        alert(`Imported ${total} participants.`);
+        alert(`Import complete. Added ${total} participants.`);
         setShowRSUImport(false);
         onRefresh();
-    } catch (e) { alert("Failed: " + e); } finally { setIsSyncing(false); }
+    } catch (e) { alert("RSU Import Failed: " + e); } finally { setIsSyncing(false); }
   };
 
   const handleBulkReassign = () => {
@@ -104,6 +114,15 @@ export const ParticipantManagement: React.FC<ParticipantManagementProps> = ({ ra
             onRefresh();
         }).catch(console.error);
     }
+  };
+
+  const handlePrintLabels = () => {
+    DatabaseService.GetSavePathPDF("Bib_Labels.pdf").then((path: string) => {
+        if (!path) return;
+        ReportingService.GenerateBibLabels(raceID, path)
+            .then(() => alert("Labels Generated Successfully"))
+            .catch(err => alert("Failed to generate labels: " + err));
+    });
   };
 
   const getNextBib = () => {
@@ -147,15 +166,6 @@ export const ParticipantManagement: React.FC<ParticipantManagementProps> = ({ ra
     }
   };
 
-  const handlePrintLabels = () => {
-    DatabaseService.GetSavePath("Save Bib Labels PDF", "Bib_Labels.pdf").then((path: string) => {
-        if (!path) return;
-        ReportingService.GenerateBibLabels(raceID, path)
-            .then(() => alert("Labels Generated Successfully"))
-            .catch(err => alert("Failed to generate labels: " + err));
-    });
-  };
-
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     const dobValue = form.dob ? new Date(form.dob).toISOString() : null;
@@ -197,16 +207,17 @@ export const ParticipantManagement: React.FC<ParticipantManagementProps> = ({ ra
 
       {showRSUImport && (
         <div className="card" style={{ marginBottom: '20px', border: '2px solid var(--accent)' }}>
-            <h3>Import from RunSignUp</h3>
+            <h3 style={{ marginTop: 0 }}>Import from RunSignUp</h3>
             <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '30px' }}>
                 <div>
                     <h4>1. Map Events</h4>
-                    <table style={{ width: '100%' }}>
-                        <thead><tr style={{textAlign: 'left'}}><th>RunSignUp Event</th><th>Local Target</th></tr></thead>
+                    <p style={{ fontSize: '0.8em', color: 'var(--text-dim)' }}>Showing events for year {new Date().getFullYear()} (Matching local race year)</p>
+                    <table style={{ width: '100%', textAlign: 'left' }}>
+                        <thead><tr><th>RunSignUp Event</th><th>Local Target</th></tr></thead>
                         <tbody>
                             {rsuEvents.map(re => (
                                 <tr key={re.event_id}>
-                                    <td style={{fontSize: '0.9em'}}>{re.name} ({re.start_time})</td>
+                                    <td style={{fontSize: '0.9em', padding: '5px 0'}}>{re.name} ({re.start_time})</td>
                                     <td>
                                         <select value={eventMappings[re.event_id] || ''} onChange={e => setEventMappings({...eventMappings, [re.event_id]: parseInt(e.target.value)})}>
                                             <option value="">-- Skip --</option>
@@ -217,14 +228,15 @@ export const ParticipantManagement: React.FC<ParticipantManagementProps> = ({ ra
                             ))}
                         </tbody>
                     </table>
+                    {rsuEvents.length === 0 && <p style={{ color: 'var(--danger)' }}>No events found for this year in RunSignUp.</p>}
                 </div>
                 <div>
                     <h4>2. Bib Assignment</h4>
                     <label>If RSU bib is missing, start auto-increment at:</label><br/>
                     <input type="number" value={startBib} onChange={e => setStartBib(e.target.value)} style={{ fontSize: '1.2em', width: '100px', margin: '10px 0' }} />
                     <br/><br/>
-                    <button onClick={handleRSUImportAction} style={{ width: '100%', padding: '15px' }} disabled={isSyncing}>
-                        {isSyncing ? 'Importing Data...' : 'START IMPORT'}
+                    <button onClick={handleRSUImportAction} style={{ width: '100%', padding: '15px', backgroundColor: 'var(--accent)' }} disabled={isSyncing || rsuEvents.length === 0}>
+                        {isSyncing ? 'Importing Data...' : 'IMPORT FROM RUNSIGNUP'}
                     </button>
                 </div>
             </div>

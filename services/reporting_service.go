@@ -2,7 +2,9 @@ package services
 
 import (
 	"database/sql"
+	"encoding/csv"
 	"fmt"
+	"os"
 
 	"github.com/johnfercher/maroto/v2"
 	"github.com/johnfercher/maroto/v2/pkg/components/code"
@@ -198,4 +200,42 @@ func (s *ReportingService) GenerateStandingsPDF(eventID int, outputPath string) 
 		return err
 	}
 	return doc.Save(outputPath)
+}
+
+func (s *ReportingService) GenerateStandingsCSV(eventID int, outputPath string) error {
+	results, err := s.timingService.GetEventResults(eventID)
+	if err != nil {
+		return err
+	}
+
+	file, err := os.Create(outputPath)
+	if err != nil {
+		return err
+	}
+	defer file.Close()
+
+	writer := csv.NewWriter(file)
+	defer writer.Flush()
+
+	// Header - compatible with common race systems
+	writer.Write([]string{"Place", "Bib", "First Name", "Last Name", "Gender", "Age", "Time"})
+
+	for _, r := range results {
+		activeTime := r.Time
+		if activeTime == "" {
+			activeTime = r.UnofficialTime
+		}
+
+		writer.Write([]string{
+			fmt.Sprintf("%d", r.EventPlace),
+			r.BibNumber,
+			r.FirstName,
+			r.LastName,
+			r.Gender,
+			fmt.Sprintf("%d", r.Age),
+			activeTime,
+		})
+	}
+
+	return nil
 }

@@ -37,9 +37,10 @@ func (s *DatabaseService) GetStatus() string {
 
 func (s *DatabaseService) New() {
 	log.Println("[Action] New Database")
-	result, err := s.app.Dialog.OpenFile().
-		SetTitle("Create New Database").
+	result, err := s.app.Dialog.SaveFile().
+		SetFilename("race_assistant.db").
 		AddFilter("Database Files (*.db)", "*.db").
+		AddFilter("All Files (*.*)", "*.*").
 		PromptForSingleSelection()
 
 	if err != nil || result == "" {
@@ -107,8 +108,21 @@ func (s *DatabaseService) GetFilePath(title string) string {
 	return result
 }
 
-func (s *DatabaseService) GetSavePath(title string, defaultName string) string {
-	result, _ := s.app.Dialog.OpenFile().SetTitle(title).PromptForSingleSelection()
+func (s *DatabaseService) GetSavePathPDF(defaultName string) string {
+	result, _ := s.app.Dialog.SaveFile().
+		SetFilename(defaultName).
+		AddFilter("PDF Files (*.pdf)", "*.pdf").
+		AddFilter("All Files (*.*)", "*.*").
+		PromptForSingleSelection()
+	return result
+}
+
+func (s *DatabaseService) GetSavePathCSV(defaultName string) string {
+	result, _ := s.app.Dialog.SaveFile().
+		SetFilename(defaultName).
+		AddFilter("CSV Files (*.csv)", "*.csv").
+		AddFilter("All Files (*.*)", "*.*").
+		PromptForSingleSelection()
 	return result
 }
 

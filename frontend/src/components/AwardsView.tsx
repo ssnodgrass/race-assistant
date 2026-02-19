@@ -68,10 +68,22 @@ export const AwardsView: React.FC<AwardsViewProps> = ({ events, mode = 'awards',
     const event = events.find(e => e.id === selectedID);
     if (!event) return;
     const fileName = showFull ? `${event.name}_Full_Standings.pdf` : `${event.name}_Award_Winners.pdf`;
-    DatabaseService.GetSavePath("Save PDF Report", fileName).then((path: string) => {
+    
+    DatabaseService.GetSavePathPDF(fileName).then((path: string) => {
         if (!path) return;
         const action = showFull ? ReportingService.GenerateStandingsPDF(selectedID, path) : ReportingService.GenerateAwardsPDF(selectedID, path);
         action.then(() => alert("PDF Generated")).catch(console.error);
+    });
+  };
+
+  const handleExportCSV = () => {
+    const event = events.find(e => e.id === selectedID);
+    if (!event) return;
+    DatabaseService.GetSavePathCSV(`${event.name}_Results.csv`).then((path: string) => {
+        if (!path) return;
+        ReportingService.GenerateStandingsCSV(selectedID, path)
+            .then(() => alert("CSV Exported Successfully"))
+            .catch(err => alert("Failed to export CSV: " + err));
     });
   };
 
@@ -106,9 +118,16 @@ export const AwardsView: React.FC<AwardsViewProps> = ({ events, mode = 'awards',
                 <option value="standings">Complete List</option>
             </select>
             {!isBrowser && !isExternal && (
-                <button onClick={handleDownloadPDF} style={{ backgroundColor: 'var(--success)' }}>
-                    Export PDF
-                </button>
+                <div style={{ display: 'flex', gap: '10px' }}>
+                    <button onClick={handleDownloadPDF} style={{ backgroundColor: 'var(--success)' }}>
+                        Export PDF
+                    </button>
+                    {showFull && (
+                        <button onClick={handleExportCSV} style={{ backgroundColor: '#444' }}>
+                            Export CSV
+                        </button>
+                    )}
+                </div>
             )}
         </div>
       </div>
@@ -137,7 +156,7 @@ export const AwardsView: React.FC<AwardsViewProps> = ({ events, mode = 'awards',
             </div>
         ) : (
             <div className="card" style={{ backgroundColor: isExternal ? '#0a0a0a' : 'var(--bg-card)', padding: isExternal ? '0' : '20px' }}>
-                <table style={{ width: '100%', textAlign: 'left', borderCollapse: 'collapse', fontSize: isExternal ? '1.4em' : '1em' }}>
+                <table style={{ width: '100%', textAlign: 'left', borderCollapse: 'collapse', fontSize: isExternal ? '1.6em' : '1em' }}>
                     <thead style={{ position: 'sticky', top: 0, backgroundColor: isExternal ? '#111' : 'var(--bg-input)', zIndex: 10 }}>
                         <tr style={{ borderBottom: '2px solid var(--border)' }}>
                             <th style={{ padding: '15px' }}>Plc</th><th>Bib</th><th>Name</th><th>G</th><th>Age</th><th style={{ textAlign: 'right' }}>Time</th>
