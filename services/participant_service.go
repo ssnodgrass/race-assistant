@@ -46,6 +46,15 @@ func (s *ParticipantService) DeleteParticipant(id int) error {
 	return s.repo.Delete(id)
 }
 
+func (s *ParticipantService) ToggleCheckIn(id int) error {
+	p, err := s.repo.GetByID(id)
+	if err != nil {
+		return err
+	}
+	p.CheckedIn = !p.CheckedIn
+	return s.repo.Update(p)
+}
+
 func (s *ParticipantService) GetCSVHeaders(filePath string) ([]string, error) {
 	f, err := os.Open(filePath)
 	if err != nil {
@@ -153,19 +162,12 @@ func (s *ParticipantService) ImportParticipants(
 	return count, nil
 }
 
-func (s *ParticipantService) ImportRunSignUpCSV(raceID int, eventID int, filePath string) (int, error) {
-	mapping := map[string]int{"first_name": 0, "last_name": 1, "gender": 2, "age": 3, "bib": 4}
-	return s.ImportParticipants(raceID, filePath, mapping, 0, eventID, nil)
-}
-
 func (s *ParticipantService) ReassignBibs(raceID int, startBib int) error {
 	participants, err := s.repo.ListByRace(raceID)
 	if err != nil {
 		return err
 	}
 
-	// Sort by Name for a logical sequence
-	// You could also sort by ID or Event if preferred
 	currentBib := startBib
 	for i := range participants {
 		participants[i].BibNumber = strconv.Itoa(currentBib)

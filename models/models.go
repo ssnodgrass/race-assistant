@@ -63,6 +63,7 @@ type Participant struct {
 	Gender       string     `json:"gender"`
 	DOB          *time.Time `json:"dob"`
 	AgeOnRaceDay int        `json:"age_on_race_day"`
+	CheckedIn    bool       `json:"checked_in"` // New field
 }
 
 type TimingPulse struct {

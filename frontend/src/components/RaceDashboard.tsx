@@ -14,6 +14,8 @@ export const RaceDashboard: React.FC<RaceDashboardProps> = ({ race, events, part
   const [manualTime, setManualTime] = useState('00:00:00');
   const [rsuRaceID, setRsuRaceID] = useState(race.rsu?.race_id || '');
 
+  const checkedInCount = participants.filter(p => p.checked_in).length;
+
   useEffect(() => {
     if (!race.start_time) {
         setElapsed('00:00:00');
@@ -120,9 +122,21 @@ export const RaceDashboard: React.FC<RaceDashboardProps> = ({ race, events, part
         </div>
         
         <div className="card">
-          <h3>Participants</h3>
-          <p style={{ fontSize: '2.5em', fontWeight: 'bold', margin: '10px 0' }}>{participants.length}</p>
-          <p style={{ color: 'var(--text-dim)' }}>Total runners registered across all events.</p>
+          <h3>Registration</h3>
+          <div style={{ display: 'flex', justifyContent: 'space-around', alignItems: 'center', margin: '10px 0' }}>
+            <div style={{ textAlign: 'center' }}>
+                <div style={{ fontSize: '2.5em', fontWeight: 'bold' }}>{participants.length}</div>
+                <div style={{ fontSize: '0.8em', color: 'var(--text-dim)', textTransform: 'uppercase' }}>Total</div>
+            </div>
+            <div style={{ fontSize: '2em', color: '#444' }}>/</div>
+            <div style={{ textAlign: 'center' }}>
+                <div style={{ fontSize: '2.5em', fontWeight: 'bold', color: 'var(--success)' }}>{checkedInCount}</div>
+                <div style={{ fontSize: '0.8em', color: 'var(--text-dim)', textTransform: 'uppercase' }}>Checked In</div>
+            </div>
+          </div>
+          <p style={{ color: 'var(--text-dim)', fontSize: '0.9em', textAlign: 'center', marginTop: '10px' }}>
+            {participants.length - checkedInCount} runners remaining to check in.
+          </p>
         </div>
 
         <div className="card" style={{ borderTop: '4px solid var(--accent)' }}>
@@ -132,9 +146,6 @@ export const RaceDashboard: React.FC<RaceDashboardProps> = ({ race, events, part
                 <input value={rsuRaceID} onChange={e => setRsuRaceID(e.target.value)} style={{ width: '100%' }} placeholder="e.g. 54529" />
             </div>
             <button onClick={handleSaveRSU} style={{ width: '100%', backgroundColor: 'var(--accent)' }}>Link Race</button>
-            <p style={{ fontSize: '0.8em', color: 'var(--text-dim)', marginTop: '10px' }}>
-                Ensure your API Key and Secret are set in <strong>Global Settings</strong>.
-            </p>
         </div>
       </div>
     </div>
