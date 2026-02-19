@@ -119,11 +119,12 @@ function App() {
     } catch (e) { return []; }
   };
 
-  const refreshActiveRace = async () => {
+  const refreshActiveRace = () => {
     if (!selectedRace) return;
-    const list = await loadRaces();
-    const updated = list?.find((r: any) => r.id === selectedRace.id);
-    if (updated) setSelectedRace(updated);
+    loadRaces().then(list => {
+        const updated = list?.find((r: any) => r.id === selectedRace.id);
+        if (updated) setSelectedRace(updated);
+    });
   };
 
   const loadRaceDetails = async (id: number) => {
@@ -166,9 +167,9 @@ function App() {
                 </div>
             </div>
 
-            <div style={{ flexGrow: 1, overflowY: 'auto' }}>
+            <div style={{ flexGrow: 1, overflow: 'hidden' }}>
                 {selectedRace ? (
-                    <div className="view-container">
+                    <div className="view-container" style={{ height: '100%' }}>
                         {view === 'live_display' && <LiveResults events={events} selectedRace={selectedRace} onRefresh={refreshActiveRace} isBrowser={isBrowserMode} />}
                         {view === 'awards' && <AwardsView events={events} mode="awards" isExternal={true} isBrowser={isBrowserMode} />}
                         {view === 'reporting' && <AwardsView events={events} mode="standings" isExternal={true} isBrowser={isBrowserMode} />}
@@ -256,7 +257,7 @@ function App() {
                     {view === 'race_detail' && <RaceDashboard race={selectedRace} events={events} participants={participants} onRefresh={refreshActiveRace} />}
                     {view === 'manage_events' && <EventManagement raceID={selectedRace.id} events={events} onRefresh={() => loadRaceDetails(selectedRace.id)} />}
                     {view === 'award_config' && <AwardConfigView events={events} />}
-                    {view === 'participants' && <ParticipantManagement raceID={selectedRace.id} events={events} participants={participants} onRefresh={() => loadRaceDetails(selectedRace.id)} onImport={() => setView('import_csv')} />}
+                    {view === 'participants' && <ParticipantManagement raceID={selectedRace.id} events={events} participants={participants} onRefresh={refreshActiveRace} onImport={() => setView('import_csv')} />}
                     {view === 'placements' && <PlacementEntry race={selectedRace} participants={participants} events={events} onRefresh={refreshActiveRace} />}
                     {view === 'times' && <TimeEntry raceID={selectedRace.id} />}
                     {view === 'awards' && <AwardsView events={events} mode="awards" />}
