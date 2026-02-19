@@ -21,18 +21,26 @@ import (
 var assets embed.FS
 
 type DatabaseService struct {
-	app       *application.App
-	currentDB *sql.DB
-	dbPath    string
-	services  []serviceWithDB
+	app          *application.App
+	currentDB    *sql.DB
+	dbPath       string
+	activeRaceID int
+	services     []serviceWithDB
 }
 
 type serviceWithDB interface {
 	SetDB(db *sql.DB)
 }
 
-func (s *DatabaseService) GetStatus() string {
-	return s.dbPath
+func (s *DatabaseService) GetStatus() map[string]interface{} {
+	return map[string]interface{}{
+		"dbPath":       s.dbPath,
+		"activeRaceID": s.activeRaceID,
+	}
+}
+
+func (s *DatabaseService) SetActiveRace(id int) {
+	s.activeRaceID = id
 }
 
 func (s *DatabaseService) New() {
@@ -67,6 +75,7 @@ func (s *DatabaseService) Close() {
 		s.currentDB = nil
 	}
 	s.dbPath = ""
+	s.activeRaceID = 0
 	for _, service := range s.services {
 		service.SetDB(nil)
 	}
@@ -75,6 +84,7 @@ func (s *DatabaseService) Close() {
 
 func (s *DatabaseService) OpenExternalWindow(view string, raceID int) {
 	log.Printf("[Action] Opening External Window (%s) for Race %d\n", view, raceID)
+	// We create a window with NO reference to the main menu to prevent Linux GTK crashes
 	s.app.Window.NewWithOptions(application.WebviewWindowOptions{
 		Title:  "Race Assistant Display",
 		URL:    fmt.Sprintf("/?view=%s&raceID=%d", view, raceID),
@@ -164,7 +174,7 @@ func main() {
 		mux.Handle("/", http.FileServer(http.FS(frontendFS)))
 		mux.HandleFunc("/api/status", func(w http.ResponseWriter, r *http.Request) {
 			w.Header().Set("Content-Type", "application/json")
-			json.NewEncoder(w).Encode(map[string]string{"dbPath": dbService.dbPath})
+			json.NewEncoder(w).Encode(dbService.GetStatus())
 		})
 		mux.HandleFunc("/api/races", func(w http.ResponseWriter, r *http.Request) {
 			w.Header().Set("Content-Type", "application/json")
@@ -186,12 +196,20 @@ func main() {
 		mux.HandleFunc("/api/awards", func(w http.ResponseWriter, r *http.Request) {
 			w.Header().Set("Content-Type", "application/json")
 			eventID, _ := strconv.Atoi(r.URL.Query().Get("eventID"))
+			if eventID == 0 {
+				json.NewEncoder(w).Encode([]interface{}{})
+				return
+			}
 			list, _ := awardService.GetAwards(eventID)
 			json.NewEncoder(w).Encode(list)
 		})
 		mux.HandleFunc("/api/results", func(w http.ResponseWriter, r *http.Request) {
 			w.Header().Set("Content-Type", "application/json")
 			eventID, _ := strconv.Atoi(r.URL.Query().Get("eventID"))
+			if eventID == 0 {
+				json.NewEncoder(w).Encode([]interface{}{})
+				return
+			}
 			list, _ := timingService.GetEventResults(eventID)
 			json.NewEncoder(w).Encode(list)
 		})

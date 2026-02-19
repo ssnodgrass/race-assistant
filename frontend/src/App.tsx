@@ -36,18 +36,27 @@ function App() {
   const isBrowserMode = !(window as any).wails;
 
   const selectedRaceRef = useRef<Race | null>(null);
-  useEffect(() => { selectedRaceRef.current = selectedRace; }, [selectedRace]);
+  useEffect(() => { 
+    selectedRaceRef.current = selectedRace; 
+    if (!isBrowserMode && selectedRace) {
+        DatabaseService.SetActiveRace(selectedRace.id);
+    }
+  }, [selectedRace]);
 
   const checkStatus = () => {
     const isWeb = !(window as any).wails;
     const statusCall = isWeb 
-        ? fetch("/api/status").then(r => r.json()).then(d => d.dbPath)
+        ? fetch("/api/status").then(r => r.json())
         : DatabaseService.GetStatus();
 
-    statusCall.then(path => {
+    statusCall.then(status => {
+        const path = status.dbPath;
+        const activeHostRaceID = status.activeRaceID;
+
         if (path) {
             const isNewPath = path !== dbPath;
             if (isNewPath) setDbPath(path);
+            
             if (isNewPath || races.length === 0) {
                 loadRaces().then(list => {
                     const params = new URLSearchParams(window.location.search);
@@ -55,10 +64,16 @@ function App() {
                     if (raceIDParam) {
                         const target = list?.find((r: any) => r.id === parseInt(raceIDParam));
                         if (target) setSelectedRace(target);
+                    } else if (activeHostRaceID > 0) {
+                        const target = list?.find((r: any) => r.id === activeHostRaceID);
+                        if (target) setSelectedRace(target);
                     } else if (list && list.length > 0 && (window.location.search.includes('view') || !selectedRaceRef.current)) {
                         setSelectedRace(list[0]);
                     }
                 });
+            } else if (isBrowserMode && activeHostRaceID > 0 && (!selectedRace || selectedRace.id !== activeHostRaceID)) {
+                const target = races.find(r => r.id === activeHostRaceID);
+                if (target) setSelectedRace(target);
             }
         }
     }).catch(() => {});
@@ -132,38 +147,40 @@ function App() {
 
   if (isExternalDisplay || isBrowserMode) {
     return (
-        <div style={{ padding: '40px', backgroundColor: '#000', minHeight: '100vh', color: 'white' }}>
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '30px', borderBottom: '1px solid #222', paddingBottom: '20px' }}>
+        <div style={{ backgroundColor: '#000', color: 'white', height: '100vh', display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
+            <div style={{ padding: 'var(--space-md) var(--space-xl)', borderBottom: '1px solid #222', flexShrink: 0, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                 <div style={{ display: 'flex', gap: '20px', alignItems: 'center' }}>
-                    <h2 style={{ margin: 0, color: 'var(--accent)' }}>Race Hub</h2>
+                    <h2 style={{ margin: 0, color: 'var(--accent)', fontSize: '2.2rem' }}>Race Hub</h2>
                     <select value={selectedRace?.id || ''} onChange={e => {
                         const r = races.find(it => it.id === parseInt(e.target.value));
                         if (r) setSelectedRace(r);
-                    }} style={{ padding: '8px', fontSize: '1.1em' }}>
+                    }} style={{ padding: '10px', fontSize: '1.1rem', minWidth: '300px' }}>
                         <option value="">-- Select Race --</option>
                         {races.map(r => <option key={r.id} value={r.id}>{r.name}</option>)}
                     </select>
                 </div>
-                <div style={{ display: 'flex', gap: '10px' }}>
-                    <button onClick={() => setView('live_display')} style={{ backgroundColor: view === 'live_display' ? 'var(--accent)' : '#222' }}>Live Board</button>
-                    <button onClick={() => setView('awards')} style={{ backgroundColor: view === 'awards' ? 'var(--accent)' : '#222' }}>Awards</button>
-                    <button onClick={() => setView('reporting')} style={{ backgroundColor: view === 'reporting' ? 'var(--accent)' : '#222' }}>Standings</button>
+                <div className="flex-row">
+                    <button onClick={() => setView('live_display')} style={{ backgroundColor: view === 'live_display' ? 'var(--accent)' : '#222', padding: '10px 20px', fontSize: '1.1rem' }}>Live Board</button>
+                    <button onClick={() => setView('awards')} style={{ backgroundColor: view === 'awards' ? 'var(--accent)' : '#222', padding: '10px 20px', fontSize: '1.1rem' }}>Awards</button>
+                    <button onClick={() => setView('reporting')} style={{ backgroundColor: view === 'reporting' ? 'var(--accent)' : '#222', padding: '10px 20px', fontSize: '1.1rem' }}>Standings</button>
                 </div>
             </div>
 
-            {selectedRace ? (
-                <div className="view-container">
-                    {view === 'live_display' && <LiveResults events={events} selectedRace={selectedRace} onRefresh={refreshActiveRace} isBrowser={isBrowserMode} />}
-                    {view === 'awards' && <AwardsView events={events} mode="awards" isExternal={true} isBrowser={isBrowserMode} />}
-                    {view === 'reporting' && <AwardsView events={events} mode="standings" isExternal={true} isBrowser={isBrowserMode} />}
-                    {view !== 'live_display' && view !== 'awards' && view !== 'reporting' && <LiveResults events={events} selectedRace={selectedRace} onRefresh={refreshActiveRace} isBrowser={isBrowserMode} />}
-                </div>
-            ) : (
-                <div style={{ textAlign: 'center', paddingTop: '100px' }}>
-                    <h1>Race Results Hub</h1>
-                    <p style={{ color: '#666' }}>Waiting for the race host to select a race...</p>
-                </div>
-            )}
+            <div style={{ flexGrow: 1, overflowY: 'auto' }}>
+                {selectedRace ? (
+                    <div className="view-container">
+                        {view === 'live_display' && <LiveResults events={events} selectedRace={selectedRace} onRefresh={refreshActiveRace} isBrowser={isBrowserMode} />}
+                        {view === 'awards' && <AwardsView events={events} mode="awards" isExternal={true} isBrowser={isBrowserMode} />}
+                        {view === 'reporting' && <AwardsView events={events} mode="standings" isExternal={true} isBrowser={isBrowserMode} />}
+                        {view !== 'live_display' && view !== 'awards' && view !== 'reporting' && <LiveResults events={events} selectedRace={selectedRace} onRefresh={refreshActiveRace} isBrowser={isBrowserMode} />}
+                    </div>
+                ) : (
+                    <div style={{ textAlign: 'center', paddingTop: '100px' }}>
+                        <h1>Race Results Hub</h1>
+                        <p className="text-dim">Waiting for the race host to select a race...</p>
+                    </div>
+                )}
+            </div>
         </div>
     );
   }
@@ -217,16 +234,16 @@ function App() {
 
       <main className="main-content">
         {!dbPath ? (
-            <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', height: '100%' }}>
+            <div className="view-container" style={{ alignItems: 'center', justifyContent: 'center' }}>
                 <h1>Welcome to Race Assistant</h1>
                 <p>Start by creating a new database or opening an existing one.</p>
-                <div style={{ display: 'flex', gap: '20px', marginTop: '20px' }}>
+                <div className="flex-row" style={{ marginTop: '20px' }}>
                     <button style={{ padding: '15px 30px', fontSize: '1.1em' }} onClick={() => DatabaseService.New()}>Create New Database</button>
                     <button style={{ padding: '15px 30px', fontSize: '1.1em', backgroundColor: '#444' }} onClick={() => DatabaseService.Open()}>Open Database</button>
                 </div>
             </div>
         ) : (
-            <>
+            <div className="view-container">
                 {view === 'list' && (
                 <RaceList races={races} onSelectRace={(r) => { setSelectedRace(r); setView('race_detail'); }} onRefresh={loadRaces} onCreateRace={() => setView('create_race')} />
                 )}
@@ -235,7 +252,7 @@ function App() {
                 )}
                 {view === 'global_settings' && <GlobalSettings />}
                 {selectedRace && (
-                <div className="view-container">
+                <div style={{ flexGrow: 1, display: 'flex', flexDirection: 'column', minHeight: 0 }}>
                     {view === 'race_detail' && <RaceDashboard race={selectedRace} events={events} participants={participants} onRefresh={refreshActiveRace} />}
                     {view === 'manage_events' && <EventManagement raceID={selectedRace.id} events={events} onRefresh={() => loadRaceDetails(selectedRace.id)} />}
                     {view === 'award_config' && <AwardConfigView events={events} />}
@@ -251,7 +268,7 @@ function App() {
                     )}
                 </div>
                 )}
-            </>
+            </div>
         )}
       </main>
     </div>

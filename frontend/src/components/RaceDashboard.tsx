@@ -83,26 +83,26 @@ export const RaceDashboard: React.FC<RaceDashboardProps> = ({ race, events, part
   };
 
   return (
-    <div>
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
+    <div style={{ display: 'flex', flexDirection: 'column', height: '100%' }}>
+      <div className="flex-between" style={{ alignItems: 'flex-start', marginBottom: 'var(--space-xl)' }}>
         <div>
             <h1>{race.name}</h1>
-            <p style={{ color: 'var(--text-dim)', marginBottom: '30px' }}>Date: {new Date(race.date).toLocaleDateString()}</p>
+            <p className="text-dim" style={{ fontSize: '1.1rem' }}>Date: {new Date(race.date).toLocaleDateString()}</p>
         </div>
         
-        <div className="card" style={{ border: '2px solid var(--accent)', textAlign: 'center', minWidth: '300px' }}>
-            <div style={{ fontSize: '0.8em', color: 'var(--text-dim)', textTransform: 'uppercase' }}>Race Clock (Unofficial)</div>
-            <div style={{ fontSize: '3.5em', fontWeight: 'bold', fontFamily: 'monospace', margin: '5px 0' }}>{elapsed}</div>
+        <div className="card" style={{ border: '2px solid var(--accent)', textAlign: 'center', minWidth: '320px', margin: 0 }}>
+            <div style={{ fontSize: '0.85rem', color: 'var(--text-dim)', textTransform: 'uppercase', letterSpacing: '0.05em', fontWeight: 700 }}>Race Clock (Unofficial)</div>
+            <div style={{ fontSize: '4rem', fontWeight: 800, fontFamily: 'monospace', margin: '8px 0', color: 'var(--text-main)' }}>{elapsed}</div>
             
-            <div style={{ marginTop: '15px', borderTop: '1px solid #333', paddingTop: '15px' }}>
+            <div style={{ marginTop: 'var(--space-md)', borderTop: '1px solid var(--border)', paddingTop: 'var(--space-md)' }}>
                 {!race.start_time ? (
                     <div>
-                        <label style={{ fontSize: '0.8em', color: 'var(--text-dim)' }}>Sync Current Time (HH:MM:SS):</label><br/>
+                        <label>Sync Current Time (HH:MM:SS)</label>
                         <input 
                             value={manualTime} 
                             onChange={e => setManualTime(e.target.value)}
-                            style={{ fontSize: '1.2em', width: '120px', textAlign: 'center', margin: '10px 0' }}
-                        /><br/>
+                            style={{ fontSize: '1.2rem', width: '140px', textAlign: 'center', marginBottom: 'var(--space-md)' }}
+                        />
                         <button onClick={handleStart} style={{ backgroundColor: 'var(--success)', width: '100%' }}>START CLOCK</button>
                     </div>
                 ) : (
@@ -112,40 +112,40 @@ export const RaceDashboard: React.FC<RaceDashboardProps> = ({ race, events, part
         </div>
       </div>
 
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(300px, 1fr))', gap: '20px', marginTop: '30px' }}>
-        <div className="card">
-          <h3>Events</h3>
-          <p style={{ fontSize: '2.5em', fontWeight: 'bold', margin: '10px 0' }}>{events.length}</p>
-          <ul style={{ paddingLeft: '20px', color: 'var(--text-dim)' }}>
-            {events.map(ev => <li key={ev.id}>{ev.name} ({ev.distance_km} km)</li>)}
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(320px, 1fr))', gap: 'var(--space-lg)' }}>
+        <div className="card" style={{ margin: 0 }}>
+          <h3 style={{ borderBottom: '1px solid var(--border)', paddingBottom: '8px' }}>Events</h3>
+          <p style={{ fontSize: '3rem', fontWeight: 800, margin: '16px 0' }}>{events.length}</p>
+          <ul style={{ paddingLeft: '24px', color: 'var(--text-dim)' }}>
+            {events.map(ev => <li key={ev.id} style={{ marginBottom: '4px' }}>{ev.name} ({ev.distance_km} km)</li>)}
           </ul>
         </div>
         
-        <div className="card">
-          <h3>Registration</h3>
-          <div style={{ display: 'flex', justifyContent: 'space-around', alignItems: 'center', margin: '10px 0' }}>
+        <div className="card" style={{ margin: 0 }}>
+          <h3 style={{ borderBottom: '1px solid var(--border)', paddingBottom: '8px' }}>Registration</h3>
+          <div style={{ display: 'flex', justifyContent: 'space-around', alignItems: 'center', margin: '24px 0' }}>
             <div style={{ textAlign: 'center' }}>
-                <div style={{ fontSize: '2.5em', fontWeight: 'bold' }}>{participants.length}</div>
-                <div style={{ fontSize: '0.8em', color: 'var(--text-dim)', textTransform: 'uppercase' }}>Total</div>
+                <div style={{ fontSize: '3rem', fontWeight: 800 }}>{participants.length}</div>
+                <div style={{ fontSize: '0.75rem', color: 'var(--text-dim)', textTransform: 'uppercase', fontWeight: 700 }}>Registered</div>
             </div>
-            <div style={{ fontSize: '2em', color: '#444' }}>/</div>
+            <div style={{ fontSize: '2.5rem', color: 'var(--border)', fontWeight: 300 }}>/</div>
             <div style={{ textAlign: 'center' }}>
-                <div style={{ fontSize: '2.5em', fontWeight: 'bold', color: 'var(--success)' }}>{checkedInCount}</div>
-                <div style={{ fontSize: '0.8em', color: 'var(--text-dim)', textTransform: 'uppercase' }}>Checked In</div>
+                <div style={{ fontSize: '3rem', fontWeight: 800, color: 'var(--success)' }}>{checkedInCount}</div>
+                <div style={{ fontSize: '0.75rem', color: 'var(--text-dim)', textTransform: 'uppercase', fontWeight: 700 }}>Checked In</div>
             </div>
           </div>
-          <p style={{ color: 'var(--text-dim)', fontSize: '0.9em', textAlign: 'center', marginTop: '10px' }}>
-            {participants.length - checkedInCount} runners remaining to check in.
-          </p>
+          <div style={{ textAlign: 'center', backgroundColor: '#ffffff05', padding: '8px', borderRadius: '4px' }}>
+            <span className="text-dim">{participants.length - checkedInCount} runners remaining</span>
+          </div>
         </div>
 
-        <div className="card" style={{ borderTop: '4px solid var(--accent)' }}>
+        <div className="card" style={{ borderTop: '4px solid var(--accent)', margin: 0 }}>
             <h3>RunSignUp Link</h3>
-            <div style={{ marginBottom: '15px' }}>
-                <label>RunSignUp Race ID:</label><br/>
-                <input value={rsuRaceID} onChange={e => setRsuRaceID(e.target.value)} style={{ width: '100%' }} placeholder="e.g. 54529" />
+            <div className="flex-row" style={{ flexDirection: 'column', alignItems: 'stretch', gap: '10px' }}>
+                <label>Race ID</label>
+                <input value={rsuRaceID} onChange={e => setRsuRaceID(e.target.value)} placeholder="e.g. 54529" />
+                <button onClick={handleSaveRSU}>Link Race</button>
             </div>
-            <button onClick={handleSaveRSU} style={{ width: '100%', backgroundColor: 'var(--accent)' }}>Link Race</button>
         </div>
       </div>
     </div>

@@ -155,11 +155,13 @@ export const ParticipantManagement: React.FC<ParticipantManagementProps> = ({ ra
   };
 
   return (
-    <div>
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '20px' }}>
-        <h2>Participants ({participants.length})</h2>
-        <div style={{ display: 'flex', gap: '10px' }}>
-            <button onClick={() => { setIsAdding(!isAdding); setShowRSUImport(false); }}>{isAdding ? 'Cancel' : 'Add Participant'}</button>
+    <div style={{ display: 'flex', flexDirection: 'column', height: '100%' }}>
+      <div className="flex-between" style={{ marginBottom: 'var(--space-lg)' }}>
+        <h2>Participants <span className="text-dim" style={{ fontSize: '0.6em', fontWeight: 400 }}>({participants.length} total)</span></h2>
+        <div className="flex-row">
+            <button onClick={() => { setIsAdding(!isAdding); setShowRSUImport(false); }}>
+                {isAdding ? 'Cancel' : '+ Add Participant'}
+            </button>
             <button onClick={onImport} style={{ backgroundColor: '#444' }}>CSV Import</button>
             {!isBrowser && (
                 <button onClick={() => { setShowRSUImport(!showRSUImport); setIsAdding(false); }} style={{ backgroundColor: 'var(--accent)' }}>RSU Import</button>
@@ -171,32 +173,32 @@ export const ParticipantManagement: React.FC<ParticipantManagementProps> = ({ ra
         </div>
       </div>
 
-      <div className="card" style={{ marginBottom: '20px', display: 'flex', alignItems: 'center', gap: '15px' }}>
-        <span style={{ fontSize: '1.2em' }}>🔍</span>
+      <div className="card" style={{ marginBottom: 'var(--space-md)', display: 'flex', alignItems: 'center', gap: '15px', padding: '12px 20px' }}>
+        <span style={{ fontSize: '1.2em', opacity: 0.5 }}>🔍</span>
         <input 
             type="text" 
             placeholder="Search by Bib, Name, or Gender..." 
             value={searchQuery} 
             onChange={e => setSearchQuery(e.target.value)} 
-            style={{ flexGrow: 1, padding: '10px', fontSize: '1.1em' }} 
+            style={{ border: 'none', background: 'transparent', padding: 0, width: '100%', boxShadow: 'none' }} 
         />
-        {searchQuery && <button onClick={() => setSearchQuery('')} style={{ backgroundColor: '#444', padding: '5px 10px' }}>Clear</button>}
+        {searchQuery && <button onClick={() => setSearchQuery('')} style={{ backgroundColor: 'transparent', color: 'var(--text-dim)', padding: '4px 8px' }}>✕</button>}
       </div>
 
       {showRSUImport && (
-        <div className="card" style={{ marginBottom: '20px', border: '2px solid var(--accent)' }}>
-            <h3>Import from RunSignUp</h3>
-            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '30px' }}>
+        <div className="card" style={{ marginBottom: 'var(--space-lg)', border: '2px solid var(--accent)' }}>
+            <h3 style={{ marginTop: 0 }}>Import from RunSignUp</h3>
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '40px' }}>
                 <div>
-                    <h4>1. Map Events</h4>
+                    <h4 style={{ color: 'var(--text-dim)', textTransform: 'uppercase', fontSize: '0.8rem', letterSpacing: '0.05em' }}>1. Map Events</h4>
                     <table style={{ width: '100%', textAlign: 'left' }}>
                         <thead><tr><th>RunSignUp Event</th><th>Local Target</th></tr></thead>
                         <tbody>
                             {rsuEvents.map(re => (
                                 <tr key={re.event_id}>
-                                    <td style={{fontSize: '0.8em'}}>{re.name}</td>
+                                    <td style={{fontSize: '0.9em', padding: '8px 0'}}>{re.name}</td>
                                     <td>
-                                        <select value={eventMappings[re.event_id] || ''} onChange={e => setEventMappings({...eventMappings, [re.event_id]: parseInt(e.target.value)})}>
+                                        <select value={eventMappings[re.event_id] || ''} onChange={e => setEventMappings({...eventMappings, [re.event_id]: parseInt(e.target.value)})} style={{ padding: '4px 8px', fontSize: '0.9em' }}>
                                             <option value="">-- Skip --</option>
                                             {events.map(le => <option key={le.id} value={le.id}>{le.name}</option>)}
                                         </select>
@@ -207,75 +209,86 @@ export const ParticipantManagement: React.FC<ParticipantManagementProps> = ({ ra
                     </table>
                 </div>
                 <div>
-                    <h4>2. Bib Assignment</h4>
-                    <label style={{ display: 'block', marginBottom: '10px' }}>
-                        <input type="checkbox" checked={assignNewBibs} onChange={e => setAssignNewBibs(e.target.checked)} />
-                        Assign new bibs if missing in RSU
-                    </label>
-                    {assignNewBibs && (
-                        <>
-                            <label>Start sequence at:</label><br/>
-                            <input type="number" value={startBib} onChange={e => setStartBib(e.target.value)} style={{ width: '80px' }} />
-                        </>
-                    )}
-                    <br/><br/>
-                    <button onClick={handleRSUImportAction} style={{ width: '100%', padding: '15px' }} disabled={isSyncing}>IMPORT DATA</button>
+                    <h4 style={{ color: 'var(--text-dim)', textTransform: 'uppercase', fontSize: '0.8rem', letterSpacing: '0.05em' }}>2. Bib Assignment</h4>
+                    <div style={{ backgroundColor: '#ffffff05', padding: 'var(--space-md)', borderRadius: 'var(--radius)' }}>
+                        <label style={{ display: 'flex', alignItems: 'center', gap: '10px', cursor: 'pointer', marginBottom: assignNewBibs ? '15px' : 0 }}>
+                            <input type="checkbox" checked={assignNewBibs} onChange={e => setAssignNewBibs(e.target.checked)} style={{ width: 'auto' }} />
+                            <span>Assign new bibs if missing in RSU</span>
+                        </label>
+                        {assignNewBibs && (
+                            <div className="flex-row">
+                                <label style={{ margin: 0 }}>Start sequence at:</label>
+                                <input type="number" value={startBib} onChange={e => setStartBib(e.target.value)} style={{ width: '100px' }} />
+                            </div>
+                        )}
+                    </div>
+                    <button onClick={handleRSUImportAction} style={{ width: '100%', padding: '15px', marginTop: '10px' }} disabled={isSyncing}>IMPORT DATA</button>
                 </div>
             </div>
         </div>
       )}
 
       {isAdding && (
-        <div className="card" style={{ marginBottom: '20px', border: '1px solid var(--accent)' }}>
-          <form onSubmit={handleSubmit} style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: '15px' }}>
-            <div><label>Bib #</label><input style={{width: '100%'}} value={form.bib} onChange={e => setForm({...form, bib: e.target.value})} required /></div>
-            <div><label>Event</label><select style={{width: '100%'}} value={form.eventID} onChange={e => setForm({...form, eventID: Number(e.target.value)})}>
+        <div className="card" style={{ marginBottom: 'var(--space-lg)', border: '1px solid var(--accent)' }}>
+          <form onSubmit={handleSubmit} style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: '20px' }}>
+            <div className="flex-row" style={{ flexDirection: 'column', alignItems: 'stretch' }}><label>Bib #</label><input value={form.bib} onChange={e => setForm({...form, bib: e.target.value})} required /></div>
+            <div className="flex-row" style={{ flexDirection: 'column', alignItems: 'stretch' }}><label>Event</label><select value={form.eventID} onChange={e => setForm({...form, eventID: Number(e.target.value)})}>
                 {events.map(ev => <option key={ev.id} value={ev.id}>{ev.name}</option>)}
             </select></div>
-            <div><label>First Name</label><input style={{width: '100%'}} value={form.first} onChange={e => setForm({...form, first: e.target.value})} required /></div>
-            <div><label>Last Name</label><input style={{width: '100%'}} value={form.last} onChange={e => setForm({...form, last: e.target.value})} required /></div>
-            <div><label>Gender</label><select style={{width: '100%'}} value={form.gender} onChange={e => setForm({...form, gender: e.target.value})}>
+            <div className="flex-row" style={{ flexDirection: 'column', alignItems: 'stretch' }}><label>First Name</label><input value={form.first} onChange={e => setForm({...form, first: e.target.value})} required /></div>
+            <div className="flex-row" style={{ flexDirection: 'column', alignItems: 'stretch' }}><label>Last Name</label><input value={form.last} onChange={e => setForm({...form, last: e.target.value})} required /></div>
+            <div className="flex-row" style={{ flexDirection: 'column', alignItems: 'stretch' }}><label>Gender</label><select value={form.gender} onChange={e => setForm({...form, gender: e.target.value})}>
                 <option value="M">Male</option><option value="F">Female</option><option value="O">Other</option>
             </select></div>
-            <div><label>Age</label><input type="number" style={{width: '100%'}} value={form.age} onChange={e => setForm({...form, age: e.target.value})} required /></div>
-            <div style={{ alignSelf: 'end' }}><label><input type="checkbox" checked={form.checked} onChange={e => setForm({...form, checked: e.target.checked})} /> Checked In</label></div>
-            <button type="submit" style={{ alignSelf: 'end' }}>{editingID ? 'Save' : 'Register'}</button>
+            <div className="flex-row" style={{ flexDirection: 'column', alignItems: 'stretch' }}><label>Age</label><input type="number" value={form.age} onChange={e => setForm({...form, age: e.target.value})} required /></div>
+            <div style={{ alignSelf: 'center', paddingTop: '20px' }}>
+                <label style={{ display: 'flex', alignItems: 'center', gap: '10px', cursor: 'pointer' }}>
+                    <input type="checkbox" checked={form.checked} onChange={e => setForm({...form, checked: e.target.checked})} style={{ width: 'auto' }} />
+                    <span>Checked In</span>
+                </label>
+            </div>
+            <div style={{ alignSelf: 'center', paddingTop: '20px', textAlign: 'right' }}>
+                <button type="submit" style={{ minWidth: '120px' }}>{editingID ? 'Save' : 'Register'}</button>
+            </div>
           </form>
         </div>
       )}
 
-      <div className="card">
+      <div className="table-container" style={{ margin: 0 }}>
         <table style={{ width: '100%', textAlign: 'left', borderCollapse: 'collapse' }}>
           <thead>
-            <tr style={{ cursor: 'pointer', borderBottom: '2px solid #444' }}>
-              <th onClick={() => toggleSort('checked')}>Checked In?</th>
+            <tr style={{ cursor: 'pointer' }}>
+              <th onClick={() => toggleSort('checked')} style={{ width: '120px' }}>Check-In {sortKey === 'checked' && (sortDir === 'asc' ? '↑' : '↓')}</th>
               <th onClick={() => toggleSort('bib')}>Bib {sortKey === 'bib' && (sortDir === 'asc' ? '↑' : '↓')}</th>
               <th onClick={() => toggleSort('name')}>Name {sortKey === 'name' && (sortDir === 'asc' ? '↑' : '↓')}</th>
-              <th onClick={() => toggleSort('gender')}>G</th>
-              <th onClick={() => toggleSort('age')}>Age</th>
+              <th onClick={() => toggleSort('gender')} style={{ width: '60px' }}>G</th>
+              <th onClick={() => toggleSort('age')} style={{ width: '80px' }}>Age</th>
               <th onClick={() => toggleSort('event')}>Event</th>
-              <th style={{ textAlign: 'right' }}>Actions</th>
+              <th style={{ textAlign: 'right', paddingRight: 'var(--space-lg)' }}>Actions</th>
             </tr>
           </thead>
           <tbody>
             {sortedParticipants.map(p => (
-              <tr key={p.id} style={{ opacity: p.checked_in ? 1 : 0.6, backgroundColor: p.checked_in ? '#ffffff05' : 'transparent' }}>
-                <td><input type="checkbox" checked={p.checked_in} onChange={() => handleToggleCheckIn(p)} /></td>
-                <td><strong>{p.bib_number}</strong></td>
+              <tr key={p.id} style={{ opacity: p.checked_in ? 1 : 0.5, backgroundColor: p.checked_in ? '#ffffff03' : 'transparent' }}>
+                <td style={{ paddingLeft: 'var(--space-lg)' }}>
+                    <input type="checkbox" checked={p.checked_in} onChange={() => handleToggleCheckIn(p)} style={{ width: '20px', height: '20px', cursor: 'pointer' }} />
+                </td>
+                <td><strong style={{ color: p.checked_in ? 'var(--accent)' : 'inherit' }}>{p.bib_number || '---'}</strong></td>
                 <td>{p.first_name} {p.last_name}</td>
                 <td>{p.gender}</td>
                 <td>{p.age_on_race_day}</td>
                 <td style={{ fontSize: '0.9em', color: 'var(--text-dim)' }}>{events.find(ev => ev.id === p.event_id)?.name}</td>
-                <td style={{ textAlign: 'right' }}>
-                    <button onClick={() => handleEdit(p)} style={{ padding: '2px 8px', marginRight: '5px', backgroundColor: '#444' }}>Edit</button>
-                    <button onClick={() => handleDelete(p.id, `${p.first_name} ${p.last_name}`)} style={{ padding: '2px 8px', backgroundColor: '#a33' }}>Del</button>
+                <td style={{ textAlign: 'right', paddingRight: 'var(--space-lg)' }}>
+                    <button onClick={() => handleEdit(p)} style={{ backgroundColor: 'transparent', color: 'var(--text-dim)', padding: '4px 8px' }}>Edit</button>
+                    <button onClick={() => handleDelete(p.id, `${p.first_name} ${p.last_name}`)} style={{ backgroundColor: 'transparent', color: 'var(--danger)', padding: '4px 8px' }}>Del</button>
                 </td>
               </tr>
             ))}
           </tbody>
         </table>
         {sortedParticipants.length === 0 && (
-            <div style={{ textAlign: 'center', padding: '30px', color: 'var(--text-dim)' }}>
+            <div style={{ textAlign: 'center', padding: '60px', color: 'var(--text-dim)' }}>
+                <div style={{ fontSize: '3rem', marginBottom: '10px' }}>🏃💨</div>
                 No participants found matching your criteria.
             </div>
         )}
