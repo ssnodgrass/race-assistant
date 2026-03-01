@@ -139,21 +139,22 @@ func TestParseUploadedTimes_DropsStartAndStopMarkers(t *testing.T) {
 				{setID: 0, centiseconds: 0},   // T000 start marker
 				{setID: 0, centiseconds: 215}, // lap
 				{setID: 0, centiseconds: 313}, // lap
-				{setID: 0, centiseconds: 596}, // stop marker
+				{setID: 0, centiseconds: 596}, // final lap
+				{setID: 0, centiseconds: 596}, // duplicated stop marker
 			},
 		},
 		1,   // selected segment
-		4,   // selected segment record count includes start+stop
+		5,   // selected segment record count includes start+terminal duplicate
 		596, // stop time (00:00:05.96)
 	)
 
 	got, meta := svc.parseUploadedTimes(raw)
 
-	if len(got) != 2 {
-		t.Fatalf("expected 2 parsed lap records, got %d", len(got))
+	if len(got) != 3 {
+		t.Fatalf("expected 3 parsed lap records, got %d", len(got))
 	}
 
-	want := []string{"00:00:02.15", "00:00:03.13"}
+	want := []string{"00:00:02.15", "00:00:03.13", "00:00:05.96"}
 	for i := range want {
 		if got[i].Time != want[i] {
 			t.Fatalf("record %d time mismatch: got %s want %s", i+1, got[i].Time, want[i])

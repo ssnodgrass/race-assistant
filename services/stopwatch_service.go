@@ -512,8 +512,9 @@ func sanitizeSegmentTimeline(times []int, stopCentiseconds int, isLastSegment bo
 		return times[:len(times)-1]
 	}
 
-	// Last segment may provide stop marker in the footer or as trailing timeline entry.
-	if stopCentiseconds > 0 && times[len(times)-1] == stopCentiseconds {
+	// For the final segment, keep the terminal split by default.
+	// Only trim when there is an obvious duplicate terminal control marker.
+	if stopCentiseconds > 0 && len(times) >= 2 && times[len(times)-1] == stopCentiseconds && times[len(times)-2] == stopCentiseconds {
 		times = times[:len(times)-1]
 	}
 
