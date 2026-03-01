@@ -103,6 +103,16 @@ export const TimeEntry: React.FC<TimeEntryProps> = ({ raceID, events }) => {
     }
   };
 
+  const handleDeleteAllRace = () => {
+    if (window.confirm("Delete all recorded times across all events for this race?")) {
+      TimingService.DeleteAllTimingPulses(raceID, 0).then(() => {
+        setEditingID(null);
+        setTimeValue('');
+        loadPulses();
+      }).catch(console.error);
+    }
+  };
+
   return (
     <div style={{ display: 'flex', flexDirection: 'column', height: '100%' }}>
       <div className="flex-between" style={{ marginBottom: 'var(--space-lg)' }}>
@@ -116,6 +126,7 @@ export const TimeEntry: React.FC<TimeEntryProps> = ({ raceID, events }) => {
           </div>
           {editingID && <button onClick={resetForm} style={{ backgroundColor: '#444' }}>Cancel Editing</button>}
           <button onClick={handleDeleteAll} style={{ backgroundColor: 'var(--danger)' }}>Delete All Times</button>
+          <button onClick={handleDeleteAllRace} style={{ backgroundColor: '#7a1f1f' }}>Delete All Race Times</button>
         </div>
       </div>
 
