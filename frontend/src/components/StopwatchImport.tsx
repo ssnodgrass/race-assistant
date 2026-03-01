@@ -11,10 +11,10 @@ interface StopwatchImportProps {
 export const StopwatchImport: React.FC<StopwatchImportProps> = ({ raceID, onComplete }) => {
   const [ports, setPorts] = useState<string[]>([]);
   const [selectedPort, setSelectedPort] = useState('');
-  const [baudRate, setBaudRate] = useState(1200);
-  const [dataBits, setDataBits] = useState(7);
+  const [baudRate, setBaudRate] = useState(4800);
+  const [dataBits, setDataBits] = useState(8);
   const [stopBits, setStopBits] = useState('1');
-  const [parity, setParity] = useState('even');
+  const [parity, setParity] = useState('none');
   const [isCapturing, setIsCapturing] = useState(false);
   const [captured, setCaptured] = useState<ImportedTime[]>([]);
   const [rawLog, setRawLog] = useState<string[]>([]);
@@ -49,6 +49,7 @@ export const StopwatchImport: React.FC<StopwatchImportProps> = ({ raceID, onComp
             dumpTextPath?: string;
             dumpBinaryPath?: string;
             dumpError?: string;
+            firstBytesHex?: string;
         };
         if (payload?.bytesRead) setBytesRead(payload.bytesRead);
         const line = payload?.error
@@ -59,7 +60,8 @@ export const StopwatchImport: React.FC<StopwatchImportProps> = ({ raceID, onComp
             : payload?.dumpError
                 ? `Capture dump error: ${payload.dumpError}`
                 : "";
-        setRawLog(prev => [...prev, line, dumpLine].filter(Boolean).slice(-20));
+        const firstBytesLine = payload?.firstBytesHex ? `First bytes: ${payload.firstBytesHex}` : "";
+        setRawLog(prev => [...prev, line, firstBytesLine, dumpLine].filter(Boolean).slice(-20));
     });
 
     const unsubComplete = Events.On('stopwatch:capture-complete', (e) => {

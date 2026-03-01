@@ -96,7 +96,7 @@ func (s *StopwatchService) StartCapture(portName string, baudRate int, dataBits 
 	}
 
 	if baudRate <= 0 {
-		baudRate = 9600
+		baudRate = 4800
 	}
 	if dataBits <= 0 {
 		dataBits = 8
@@ -123,6 +123,10 @@ func (s *StopwatchService) StartCapture(portName string, baudRate int, dataBits 
 		DataBits: dataBits,
 		Parity:   p,
 		StopBits: sb,
+		InitialStatusBits: &serial.ModemOutputBits{
+			DTR: true,
+			RTS: true,
+		},
 	}
 
 	port, err := serial.Open(portName, mode)
@@ -137,6 +141,11 @@ func (s *StopwatchService) StartCapture(portName string, baudRate int, dataBits 
 	s.capturedTimes = []models.ImportedTime{}
 	s.captureBuffer = []byte{}
 	s.mu.Unlock()
+
+	// Some USB-serial adapters/devices require a short settle time after opening.
+	time.Sleep(150 * time.Millisecond)
+	_ = port.SetDTR(true)
+	_ = port.SetRTS(true)
 
 	if _, err := port.Write([]byte{0x14, 0x14}); err != nil {
 		port.Close()
@@ -302,7 +311,8 @@ func (s *StopwatchService) finalizeCapture(raw []byte) {
 
 func (s *StopwatchService) parseUploadedTimes(raw []byte) ([]models.ImportedTime, map[string]interface{}) {
 	meta := map[string]interface{}{
-		"bytesRead": len(raw),
+		"bytesRead":     len(raw),
+		"firstBytesHex": previewHex(raw, 64),
 	}
 
 	if len(raw) == 0 {
@@ -610,6 +620,16 @@ func isHexOnly(s string) bool {
 		}
 	}
 	return true
+}
+
+func previewHex(raw []byte, max int) string {
+	if len(raw) == 0 || max <= 0 {
+		return ""
+	}
+	if len(raw) < max {
+		max = len(raw)
+	}
+	return fmt.Sprintf("% x", raw[:max])
 }
 
 func (s *StopwatchService) CommitToRace(raceID int, times []models.ImportedTime) (int, error) {
