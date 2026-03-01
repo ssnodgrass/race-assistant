@@ -116,10 +116,13 @@ export const StopwatchImport: React.FC<StopwatchImportProps> = ({ raceID, onComp
     });
   };
 
+  const sortedCaptured = [...captured].sort((a, b) => a.place - b.place);
+
   const handleCommit = () => {
     if (captured.length === 0) return;
+    const ordered = [...captured].sort((a, b) => a.place - b.place);
     if (window.confirm(`Import ${captured.length} times?`)) {
-        StopwatchService.CommitToRace(raceID, captured).then(() => {
+        StopwatchService.CommitToRace(raceID, ordered).then(() => {
             alert("Imported successfully");
             onComplete();
         });
@@ -234,7 +237,7 @@ export const StopwatchImport: React.FC<StopwatchImportProps> = ({ raceID, onComp
                         <tr><th style={{ paddingLeft: 'var(--space-md)' }}>Place</th><th>Captured Time</th></tr>
                     </thead>
                     <tbody>
-                        {captured.map((c, i) => (
+                        {sortedCaptured.map((c, i) => (
                             <tr key={i}><td style={{ paddingLeft: 'var(--space-md)' }}>{c.place}</td><td style={{ fontFamily: 'monospace', fontWeight: 700, color: 'var(--accent)' }}>{c.time}</td></tr>
                         ))}
                     </tbody>

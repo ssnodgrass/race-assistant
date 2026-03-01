@@ -363,6 +363,7 @@ func (s *StopwatchService) parseUploadedTimes(raw []byte) ([]models.ImportedTime
 	if expected > 0 && expected <= len(times) {
 		times = times[:expected]
 	}
+	times = dropControlTimelineTimes(times, footerFields.stopCentiseconds)
 
 	imported := make([]models.ImportedTime, 0, len(times))
 	for i, cs := range times {
@@ -471,6 +472,27 @@ func extractTimelineTimes(records []rawRecord) []int {
 		}
 		times = append(times, rec.centiseconds)
 	}
+	return times
+}
+
+func dropControlTimelineTimes(times []int, stopCentiseconds int) []int {
+	if len(times) == 0 {
+		return times
+	}
+
+	// T000 start marker should not be imported as a finisher lap.
+	if times[0] == 0 {
+		times = times[1:]
+	}
+	if len(times) == 0 {
+		return times
+	}
+
+	// Stop marker should not be imported as a finisher lap.
+	if stopCentiseconds > 0 && times[len(times)-1] == stopCentiseconds {
+		times = times[:len(times)-1]
+	}
+
 	return times
 }
 
