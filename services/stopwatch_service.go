@@ -359,17 +359,23 @@ func (s *StopwatchService) parseUpload(raw []byte) ([]models.ImportedTime, map[i
 		return []models.ImportedTime{}, map[int][]models.ImportedTime{}, meta
 	}
 
+	activeBlocks := blocks
+	if footerFields.segmentCount > 0 && footerFields.segmentCount <= len(blocks) {
+		activeBlocks = blocks[len(blocks)-footerFields.segmentCount:]
+	}
+	meta["activeBlockCount"] = len(activeBlocks)
+
 	selectedIndex := footerFields.selectedSegment
-	if selectedIndex <= 0 || selectedIndex > len(blocks) {
-		selectedIndex = len(blocks)
+	if selectedIndex <= 0 || selectedIndex > len(activeBlocks) {
+		selectedIndex = len(activeBlocks)
 	}
 	meta["selectedSegment"] = selectedIndex
 
 	segments := map[int][]models.ImportedTime{}
-	segmentLapCounts := make([]int, 0, len(blocks))
+	segmentLapCounts := make([]int, 0, len(activeBlocks))
 	selectedRecordsRead := 0
 
-	for i, block := range blocks {
+	for i, block := range activeBlocks {
 		records := parseBlockRecords(raw, block.start, block.end)
 		times := extractTimelineTimes(records)
 
@@ -381,7 +387,7 @@ func (s *StopwatchService) parseUpload(raw []byte) ([]models.ImportedTime, map[i
 			}
 		}
 
-		times = sanitizeSegmentTimeline(times, footerFields.stopCentiseconds, i == len(blocks)-1)
+		times = sanitizeSegmentTimeline(times, footerFields.stopCentiseconds, i == len(activeBlocks)-1)
 		segments[segIndex] = toImportedTimes(times)
 		segmentLapCounts = append(segmentLapCounts, len(times))
 

@@ -166,7 +166,67 @@ func TestParseUploadedTimes_DropsStartAndStopMarkers(t *testing.T) {
 	}
 }
 
+func TestParseUploadedTimes_UsesTailBlocksPerFooterSegmentCount(t *testing.T) {
+	svc := NewStopwatchService(nil)
+
+	raw := buildTestCaptureWithFooterSegmentCount(
+		0x81,
+		[][]rawRecord{
+			{
+				{setID: 0, centiseconds: 156},
+				{setID: 0, centiseconds: 353},
+				{setID: 0, centiseconds: 530},
+				{setID: 0, centiseconds: 753},
+				{setID: 0, centiseconds: 957},
+				{setID: 0, centiseconds: 1216},
+				{setID: 0, centiseconds: 931},
+				{setID: 0, centiseconds: 1035},
+			},
+			{
+				{setID: 0, centiseconds: 179},
+				{setID: 0, centiseconds: 274},
+				{setID: 0, centiseconds: 296},
+				{setID: 0, centiseconds: 317},
+				{setID: 0, centiseconds: 341},
+				{setID: 0, centiseconds: 399},
+				{setID: 0, centiseconds: 419},
+			},
+		},
+		1,    // footer segment count says only last 1 segment is active
+		1,    // selected segment within active tail window
+		6,    // selected segment records
+		1394, // footer stop
+	)
+
+	got, meta := svc.parseUploadedTimes(raw)
+
+	if len(got) != 6 {
+		t.Fatalf("expected 6 parsed records, got %d", len(got))
+	}
+	want := []string{
+		"00:00:01.79",
+		"00:00:02.74",
+		"00:00:02.96",
+		"00:00:03.17",
+		"00:00:03.41",
+		"00:00:03.99",
+	}
+	for i := range want {
+		if got[i].Time != want[i] {
+			t.Fatalf("record %d time mismatch: got %s want %s", i+1, got[i].Time, want[i])
+		}
+	}
+
+	if meta["activeBlockCount"] != 1 {
+		t.Fatalf("activeBlockCount mismatch: got %v want 1", meta["activeBlockCount"])
+	}
+}
+
 func buildTestCapture(protoByte byte, segments [][]rawRecord, selectedSegment int, selectedCount int, stopCentiseconds int) []byte {
+	return buildTestCaptureWithFooterSegmentCount(protoByte, segments, len(segments), selectedSegment, selectedCount, stopCentiseconds)
+}
+
+func buildTestCaptureWithFooterSegmentCount(protoByte byte, segments [][]rawRecord, footerSegmentCount int, selectedSegment int, selectedCount int, stopCentiseconds int) []byte {
 	raw := []byte{}
 
 	for i, seg := range segments {
@@ -185,7 +245,7 @@ func buildTestCapture(protoByte byte, segments [][]rawRecord, selectedSegment in
 		raw = append(raw, 0x55)
 	}
 
-	segmentCount := len(segments)
+	segmentCount := footerSegmentCount
 	footer := []byte{
 		byte(segmentCount >> 8), byte(segmentCount & 0xff),
 		0x00, 0x00, // unknown session field
