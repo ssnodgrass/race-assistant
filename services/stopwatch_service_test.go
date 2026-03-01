@@ -166,7 +166,7 @@ func TestParseUploadedTimes_DropsStartAndStopMarkers(t *testing.T) {
 	}
 }
 
-func TestParseUploadedTimes_UsesTailBlocksPerFooterSegmentCount(t *testing.T) {
+func TestParseUploadedTimes_UsesLeadingBlocksPerFooterSegmentCount(t *testing.T) {
 	svc := NewStopwatchService(nil)
 
 	raw := buildTestCaptureWithFooterSegmentCount(
@@ -192,8 +192,8 @@ func TestParseUploadedTimes_UsesTailBlocksPerFooterSegmentCount(t *testing.T) {
 				{setID: 0, centiseconds: 419},
 			},
 		},
-		1,    // footer segment count says only last 1 segment is active
-		1,    // selected segment within active tail window
+		1,    // footer segment count says only first 1 segment is active
+		1,    // selected segment within active window
 		6,    // selected segment records
 		1394, // footer stop
 	)
@@ -204,12 +204,12 @@ func TestParseUploadedTimes_UsesTailBlocksPerFooterSegmentCount(t *testing.T) {
 		t.Fatalf("expected 6 parsed records, got %d", len(got))
 	}
 	want := []string{
-		"00:00:01.79",
-		"00:00:02.74",
-		"00:00:02.96",
-		"00:00:03.17",
-		"00:00:03.41",
-		"00:00:03.99",
+		"00:00:01.56",
+		"00:00:03.53",
+		"00:00:05.30",
+		"00:00:07.53",
+		"00:00:09.57",
+		"00:00:12.16",
 	}
 	for i := range want {
 		if got[i].Time != want[i] {

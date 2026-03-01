@@ -361,7 +361,7 @@ func (s *StopwatchService) parseUpload(raw []byte) ([]models.ImportedTime, map[i
 
 	activeBlocks := blocks
 	if footerFields.segmentCount > 0 && footerFields.segmentCount <= len(blocks) {
-		activeBlocks = blocks[len(blocks)-footerFields.segmentCount:]
+		activeBlocks = blocks[:footerFields.segmentCount]
 	}
 	meta["activeBlockCount"] = len(activeBlocks)
 
