@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { ParticipantService, RunSignUpService, RaceService } from '../../bindings/github.com/ssnodgrass/race-assistant/services';
-import { Participant, Event as RaceEvent, RSUEvent, Race } from '../../bindings/github.com/ssnodgrass/race-assistant/models';
+import { Participant, Event as RaceEvent, RSUEvent } from '../../bindings/github.com/ssnodgrass/race-assistant/models';
 
 interface ParticipantManagementProps {
   raceID: number;

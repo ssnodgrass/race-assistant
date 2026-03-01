@@ -10,6 +10,11 @@ interface PlacementEntryProps {
   onBack?: () => void;
 }
 
+interface TableRow {
+    index: number;
+    data: ChuteAssignment | undefined;
+}
+
 export const PlacementEntry: React.FC<PlacementEntryProps> = ({ race, participants, events, onRefresh, onBack }) => {
   const [placements, setPlacements] = useState<ChuteAssignment[]>([]);
   const [place, setPlace] = useState('');
@@ -118,7 +123,7 @@ export const PlacementEntry: React.FC<PlacementEntryProps> = ({ race, participan
   );
 
   const maxExisting = placements.length > 0 ? Math.max(...placements.map(p => p.place)) : 0;
-  const tableRows = [];
+  const tableRows: TableRow[] = [];
   for (let i = 1; i <= maxExisting; i++) {
     tableRows.push({ index: i, data: placements.find(item => item.place === i) });
   }

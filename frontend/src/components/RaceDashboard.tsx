@@ -107,7 +107,7 @@ export const RaceDashboard: React.FC<RaceDashboardProps> = ({ race, events, part
                         <input 
                             value={manualTime} 
                             onChange={e => setManualTime(e.target.value)}
-                            style={{ fontSize: '1.2rem', width: '140px', textAlign: 'center', marginBottom: 'var(--spacing-md)' }}
+                            style={{ fontSize: '1.2rem', width: '140px', textAlign: 'center', marginBottom: 'var(--space-md)' }}
                         />
                         <button onClick={handleStart} style={{ backgroundColor: 'var(--success)', width: '100%' }}>START CLOCK</button>
                     </div>
