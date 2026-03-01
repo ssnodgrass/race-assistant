@@ -28,7 +28,13 @@ func (s *TimingService) SetDB(db *sql.DB) {
 }
 
 func (s *TimingService) AddTimingPulse(raceID int, place int, rawTime string) (models.TimingPulse, error) {
-	tp := models.TimingPulse{RaceID: raceID, Place: place, RawTime: rawTime}
+	tp := models.TimingPulse{RaceID: raceID, EventID: 0, Place: place, RawTime: rawTime}
+	err := s.repo.CreatePulse(&tp)
+	return tp, err
+}
+
+func (s *TimingService) AddTimingPulseForEvent(raceID int, eventID int, place int, rawTime string) (models.TimingPulse, error) {
+	tp := models.TimingPulse{RaceID: raceID, EventID: eventID, Place: place, RawTime: rawTime}
 	err := s.repo.CreatePulse(&tp)
 	return tp, err
 }
@@ -45,26 +51,43 @@ func (s *TimingService) ListTimingPulses(raceID int) ([]models.TimingPulse, erro
 	return s.repo.ListPulses(raceID)
 }
 
+func (s *TimingService) ListTimingPulsesByEvent(raceID int, eventID int) ([]models.TimingPulse, error) {
+	return s.repo.ListPulsesByEvent(raceID, eventID)
+}
+
+func (s *TimingService) DeleteAllTimingPulses(raceID int, eventID int) error {
+	return s.repo.DeletePulses(raceID, eventID)
+}
+
 func (s *TimingService) GetBibAssignment(raceID int, bibNumber string) (int, error) {
 	return s.repo.GetBibAssignment(raceID, bibNumber)
 }
 
 func (s *TimingService) AssignBibToPlace(raceID int, place int, bibNumber string) error {
+	return s.AssignBibToPlaceForEvent(raceID, 0, place, bibNumber)
+}
+
+func (s *TimingService) AssignBibToPlaceForEvent(raceID int, eventID int, place int, bibNumber string) error {
 	if bibNumber != "?" && bibNumber != "" {
 		s.repo.DeleteBibAssignment(raceID, bibNumber)
 	}
 
-	ca := models.ChuteAssignment{RaceID: raceID, Place: place, BibNumber: bibNumber}
+	ca := models.ChuteAssignment{RaceID: raceID, EventID: eventID, Place: place, BibNumber: bibNumber}
 	return s.repo.UpsertChuteAssignment(&ca)
 }
 
 func (s *TimingService) AssignBibToPlaceWithTime(raceID int, place int, bibNumber string, unofficialTime string) error {
+	return s.AssignBibToPlaceWithTimeForEvent(raceID, 0, place, bibNumber, unofficialTime)
+}
+
+func (s *TimingService) AssignBibToPlaceWithTimeForEvent(raceID int, eventID int, place int, bibNumber string, unofficialTime string) error {
 	if bibNumber != "?" && bibNumber != "" {
 		s.repo.DeleteBibAssignment(raceID, bibNumber)
 	}
 
 	ca := models.ChuteAssignment{
 		RaceID:         raceID,
+		EventID:        eventID,
 		Place:          place,
 		BibNumber:      bibNumber,
 		UnofficialTime: unofficialTime,
@@ -74,6 +97,10 @@ func (s *TimingService) AssignBibToPlaceWithTime(raceID int, place int, bibNumbe
 
 func (s *TimingService) ShiftPlacements(raceID int, startPlace int, delta int) error {
 	return s.repo.ShiftPlacements(raceID, startPlace, delta)
+}
+
+func (s *TimingService) ShiftPlacementsForEvent(raceID int, eventID int, startPlace int, delta int) error {
+	return s.repo.ShiftPlacementsByEvent(raceID, eventID, startPlace, delta)
 }
 
 func (s *TimingService) InsertPlacementGap(raceID int, place int) error {
@@ -89,6 +116,14 @@ func (s *TimingService) DeletePlacement(raceID, place int) error {
 
 func (s *TimingService) ListPlacements(raceID int) ([]models.ChuteAssignment, error) {
 	return s.repo.ListPlacements(raceID)
+}
+
+func (s *TimingService) DeletePlacementForEvent(raceID, eventID, place int) error {
+	return s.repo.DeleteChuteAssignmentByEvent(raceID, eventID, place)
+}
+
+func (s *TimingService) ListPlacementsByEvent(raceID, eventID int) ([]models.ChuteAssignment, error) {
+	return s.repo.ListPlacementsByEvent(raceID, eventID)
 }
 
 func (s *TimingService) ImportPlacementsCSV(raceID int, filePath string) (int, error) {
@@ -147,8 +182,10 @@ func (s *TimingService) GetEventResults(eventID int) ([]models.Result, error) {
 		results[i].EventPlace = i + 1
 		// Use official time if present, otherwise fallback to captured unofficial time for pace
 		activeTime := results[i].Time
-		if activeTime == "" { activeTime = results[i].UnofficialTime }
-		
+		if activeTime == "" {
+			activeTime = results[i].UnofficialTime
+		}
+
 		results[i].Pace = s.calculatePace(activeTime, event.DistanceKM)
 	}
 	return results, nil

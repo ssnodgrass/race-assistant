@@ -71,6 +71,7 @@ type Participant struct {
 type TimingPulse struct {
 	ID      int    `json:"id"`
 	RaceID  int    `json:"race_id"`
+	EventID int    `json:"event_id"`
 	Place   int    `json:"place"`
 	RawTime string `json:"raw_time"`
 }
@@ -82,9 +83,15 @@ type ImportedTime struct {
 
 type ChuteAssignment struct {
 	RaceID         int    `json:"race_id"`
+	EventID        int    `json:"event_id"`
 	Place          int    `json:"place"`
 	BibNumber      string `json:"bib_number"`
 	UnofficialTime string `json:"unofficial_time"`
+}
+
+type SegmentEventSelection struct {
+	Segment int `json:"segment"`
+	EventID int `json:"event_id"`
 }
 
 type AgeGroup struct {
@@ -112,7 +119,7 @@ type AwardConfig struct {
 	IncludeOverall            bool          `json:"include_overall"`
 	IncludeMasters            bool          `json:"include_masters"`
 	IncludeGrandMasters       bool          `json:"include_grand_masters"`
-	IncludeSeniorGrandMasters bool        `json:"include_senior_grand_masters"`
+	IncludeSeniorGrandMasters bool          `json:"include_senior_grand_masters"`
 	SplitGender               bool          `json:"split_gender"`
 	AwardStrategy             AwardStrategy `json:"award_strategy"`
 	AgeGroups                 []AgeGroup    `json:"age_groups"`

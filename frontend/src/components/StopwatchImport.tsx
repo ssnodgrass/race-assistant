@@ -1,14 +1,15 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { Events } from "@wailsio/runtime";
 import { StopwatchService } from '../../bindings/github.com/ssnodgrass/race-assistant/services';
-import { ImportedTime } from '../../bindings/github.com/ssnodgrass/race-assistant/models';
+import { ImportedTime, Event as RaceEvent, SegmentEventSelection } from '../../bindings/github.com/ssnodgrass/race-assistant/models';
 
 interface StopwatchImportProps {
   raceID: number;
+  events: RaceEvent[];
   onComplete: () => void;
 }
 
-export const StopwatchImport: React.FC<StopwatchImportProps> = ({ raceID, onComplete }) => {
+export const StopwatchImport: React.FC<StopwatchImportProps> = ({ raceID, events, onComplete }) => {
   const [ports, setPorts] = useState<string[]>([]);
   const [selectedPort, setSelectedPort] = useState('');
   const [baudRate, setBaudRate] = useState(4800);
@@ -20,9 +21,20 @@ export const StopwatchImport: React.FC<StopwatchImportProps> = ({ raceID, onComp
   const [rawLog, setRawLog] = useState<string[]>([]);
   const [bytesRead, setBytesRead] = useState(0);
   const [manualText, setManualText] = useState('');
+  const [selectedEventID, setSelectedEventID] = useState<number>(events[0]?.id || 0);
+  const [replaceExisting, setReplaceExisting] = useState(true);
+  const [segmentCount, setSegmentCount] = useState(1);
+  const [segmentLapCounts, setSegmentLapCounts] = useState<number[]>([]);
+  const [segmentEventMap, setSegmentEventMap] = useState<Record<number, number>>({});
   const [, setStatus] = useState('Idle');
 
   const logEndRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (events.length > 0 && !events.some(ev => ev.id === selectedEventID)) {
+      setSelectedEventID(events[0].id);
+    }
+  }, [events, selectedEventID]);
 
   useEffect(() => {
     refreshPorts();
@@ -50,8 +62,21 @@ export const StopwatchImport: React.FC<StopwatchImportProps> = ({ raceID, onComp
             dumpBinaryPath?: string;
             dumpError?: string;
             firstBytesHex?: string;
+            segmentLapCounts?: number[];
         };
         if (payload?.bytesRead) setBytesRead(payload.bytesRead);
+        const discoveredSegments = payload?.segmentCount || 1;
+        setSegmentCount(discoveredSegments);
+        setSegmentLapCounts(payload?.segmentLapCounts || []);
+        if (discoveredSegments > 1) {
+            setSegmentEventMap(prev => {
+                const defaults: Record<number, number> = {};
+                for (let i = 1; i <= discoveredSegments; i++) {
+                    defaults[i] = prev[i] || selectedEventID || events[0]?.id || 0;
+                }
+                return defaults;
+            });
+        }
         const line = payload?.error
             ? `Parse error: ${payload.error}`
             : `Parsed ${payload?.recordsParsed || 0} records from segment ${payload?.selectedSegment || "?"}/${payload?.segmentCount || "?"} (footer count ${payload?.selectedSegmentRecords || 0}, stop ${payload?.stopTime || "n/a"}).`;
@@ -102,6 +127,8 @@ export const StopwatchImport: React.FC<StopwatchImportProps> = ({ raceID, onComp
         setCaptured([]);
         setRawLog([]);
         setBytesRead(0);
+        setSegmentCount(1);
+        setSegmentLapCounts([]);
         StopwatchService.StartCapture(selectedPort, baudRate, dataBits, stopBits, parity).then(() => {
             setIsCapturing(true);
             setStatus("Listening...");
@@ -119,13 +146,34 @@ export const StopwatchImport: React.FC<StopwatchImportProps> = ({ raceID, onComp
   const sortedCaptured = [...captured].sort((a, b) => a.place - b.place);
 
   const handleCommit = () => {
-    if (captured.length === 0) return;
+    if (segmentCount > 1) {
+        const selections: SegmentEventSelection[] = [];
+        for (let i = 1; i <= segmentCount; i++) {
+            const eventID = segmentEventMap[i];
+            if (eventID > 0) {
+                selections.push(new SegmentEventSelection({ segment: i, event_id: eventID }));
+            }
+        }
+        if (selections.length === 0) {
+            alert("Select at least one event mapping for captured segments.");
+            return;
+        }
+        if (window.confirm(`Import ${selections.length} segment(s) into mapped events?`)) {
+            StopwatchService.CommitCapturedSegments(raceID, selections, replaceExisting).then((count) => {
+                alert(`Imported ${count} times successfully`);
+                onComplete();
+            }).catch(err => alert(err));
+        }
+        return;
+    }
+
+    if (captured.length === 0 || selectedEventID <= 0) return;
     const ordered = [...captured].sort((a, b) => a.place - b.place);
-    if (window.confirm(`Import ${captured.length} times?`)) {
-        StopwatchService.CommitToRace(raceID, ordered).then(() => {
+    if (window.confirm(`Import ${captured.length} times to selected event?`)) {
+        StopwatchService.CommitToRaceEvent(raceID, selectedEventID, replaceExisting, ordered).then(() => {
             alert("Imported successfully");
             onComplete();
-        });
+        }).catch(err => alert(err));
     }
   };
 
@@ -230,6 +278,39 @@ export const StopwatchImport: React.FC<StopwatchImportProps> = ({ raceID, onComp
 
       <div className="card" style={{ margin: 0, display: 'flex', flexDirection: 'column' }}>
         <h2 style={{ borderBottom: '1px solid var(--border)', paddingBottom: '8px', marginBottom: 'var(--space-md)' }}>Review Staged Data</h2>
+        <div style={{ marginBottom: '10px', display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px' }}>
+            <div>
+                <label style={{ display: 'block', marginBottom: '4px', fontWeight: 600, fontSize: '0.75em', color: 'var(--text-dim)' }}>EVENT TARGET</label>
+                <select value={selectedEventID} onChange={e => setSelectedEventID(Number(e.target.value))} disabled={segmentCount > 1}>
+                    {events.map(ev => <option key={ev.id} value={ev.id}>{ev.name}</option>)}
+                </select>
+            </div>
+            <label style={{ display: 'flex', alignItems: 'flex-end', gap: '8px', fontSize: '0.9em' }}>
+                <input type="checkbox" checked={replaceExisting} onChange={e => setReplaceExisting(e.target.checked)} />
+                Replace existing times in target event(s)
+            </label>
+        </div>
+
+        {segmentCount > 1 && (
+            <div className="card" style={{ margin: '0 0 10px 0', backgroundColor: 'rgba(0,123,255,0.04)' }}>
+                <h3 style={{ marginBottom: '8px', fontSize: '1rem' }}>Segment Mapping</h3>
+                <div style={{ fontSize: '0.8rem', color: 'var(--text-dim)', marginBottom: '8px' }}>
+                    Multiple stopwatch segments detected. Assign each segment to an event before import.
+                </div>
+                {Array.from({ length: segmentCount }, (_, i) => i + 1).map(seg => (
+                    <div key={seg} style={{ display: 'grid', gridTemplateColumns: '140px 1fr', gap: '8px', marginBottom: '6px' }}>
+                        <div style={{ fontFamily: 'monospace' }}>Segment {seg} ({segmentLapCounts[seg - 1] || 0} laps)</div>
+                        <select
+                            value={segmentEventMap[seg] || selectedEventID || 0}
+                            onChange={e => setSegmentEventMap(prev => ({ ...prev, [seg]: Number(e.target.value) }))}
+                        >
+                            <option value={0}>-- Skip Segment --</option>
+                            {events.map(ev => <option key={ev.id} value={ev.id}>{ev.name}</option>)}
+                        </select>
+                    </div>
+                ))}
+            </div>
+        )}
         <div className="table-container" style={{ flexGrow: 1 }}>
             {captured.length > 0 ? (
                 <table style={{ borderCollapse: 'collapse' }}>
@@ -250,7 +331,7 @@ export const StopwatchImport: React.FC<StopwatchImportProps> = ({ raceID, onComp
         </div>
         {captured.length > 0 && !isCapturing && (
             <button onClick={handleCommit} style={{ width: '100%', marginTop: '20px', padding: '15px', backgroundColor: 'var(--success)' }}>
-                COMMIT {captured.length} PULSES TO DATABASE
+                {segmentCount > 1 ? 'IMPORT MAPPED SEGMENTS' : `COMMIT ${captured.length} PULSES TO DATABASE`}
             </button>
         )}
       </div>

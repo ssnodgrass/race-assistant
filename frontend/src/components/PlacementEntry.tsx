@@ -17,6 +17,7 @@ interface TableRow {
 
 export const PlacementEntry: React.FC<PlacementEntryProps> = ({ race, participants, events, onRefresh, onBack }) => {
   const [placements, setPlacements] = useState<ChuteAssignment[]>([]);
+  const [selectedEventID, setSelectedEventID] = useState<number>(events[0]?.id || 0);
   const [place, setPlace] = useState('');
   const [nextPlace, setNextPlace] = useState(1);
   const [bib, setBib] = useState('');
@@ -33,6 +34,12 @@ export const PlacementEntry: React.FC<PlacementEntryProps> = ({ race, participan
 
   const currentPlaceRef = useRef(place);
   useEffect(() => { currentPlaceRef.current = place; }, [place]);
+
+  useEffect(() => {
+    if (events.length > 0 && !events.some(ev => ev.id === selectedEventID)) {
+      setSelectedEventID(events[0].id);
+    }
+  }, [events, selectedEventID]);
 
   useEffect(() => {
     loadPlacements();
@@ -58,7 +65,7 @@ export const PlacementEntry: React.FC<PlacementEntryProps> = ({ race, participan
         window.removeEventListener('mousedown', handleGlobalClick);
         window.removeEventListener('keydown', handleKeyDown);
     };
-  }, [race.id, nextPlace]);
+  }, [race.id, selectedEventID, nextPlace]);
 
   useEffect(() => {
     if (!race.start_time) {
@@ -78,7 +85,13 @@ export const PlacementEntry: React.FC<PlacementEntryProps> = ({ race, participan
   }, [race.start_time]);
 
   const loadPlacements = () => {
-    TimingService.ListPlacements(race.id).then(data => {
+    if (!selectedEventID) {
+        setPlacements([]);
+        setNextPlace(1);
+        setPlace('1');
+        return;
+    }
+    TimingService.ListPlacementsByEvent(race.id, selectedEventID).then(data => {
         const sorted = data || [];
         setPlacements(sorted);
         const next = (sorted.length > 0) ? Math.max(...sorted.map(d => d.place)) + 1 : 1;
@@ -92,7 +105,7 @@ export const PlacementEntry: React.FC<PlacementEntryProps> = ({ race, participan
   const handleAssign = async (p: number, b: string, skipConfirm = false) => {
     if (!b || !p) return;
     const unofficialTime = race.start_time ? elapsed : "";
-    TimingService.AssignBibToPlaceWithTime(race.id, p, b, unofficialTime)
+    TimingService.AssignBibToPlaceWithTimeForEvent(race.id, selectedEventID, p, b, unofficialTime)
       .then(() => {
         const part = participants.find(reg => reg.bib_number === b);
         setLastScanned({ place: p, bib: b, name: part ? `${part.first_name} ${part.last_name}` : "Unknown Runner" });
@@ -105,17 +118,18 @@ export const PlacementEntry: React.FC<PlacementEntryProps> = ({ race, participan
 
   const handleShift = (p: number, delta: number) => {
     if (window.confirm(`Shift sequence from ${p} onwards?`)) {
-        TimingService.ShiftPlacements(race.id, p, delta).then(loadPlacements).catch(console.error);
+        TimingService.ShiftPlacementsForEvent(race.id, selectedEventID, p, delta).then(loadPlacements).catch(console.error);
     }
   };
 
   const handleDelete = (p: number) => {
     if (window.confirm(`Delete placement ${p}?`)) {
-        TimingService.DeletePlacement(race.id, p).then(loadPlacements).catch(console.error);
+        TimingService.DeletePlacementForEvent(race.id, selectedEventID, p).then(loadPlacements).catch(console.error);
     }
   };
 
-  const unassigned = participants.filter(p => !placements.some(pl => pl.bib_number === p.bib_number));
+  const eventParticipants = participants.filter(p => p.event_id === selectedEventID);
+  const unassigned = eventParticipants.filter(p => !placements.some(pl => pl.bib_number === p.bib_number));
   const filteredUnassigned = unassigned.filter(p => 
     p.first_name.toLowerCase().includes(search.toLowerCase()) || 
     p.last_name.toLowerCase().includes(search.toLowerCase()) ||
@@ -140,6 +154,12 @@ export const PlacementEntry: React.FC<PlacementEntryProps> = ({ race, participan
             )}
         </div>
         <div className="flex-row">
+            <div style={{ minWidth: '220px' }}>
+                <label style={{ display: 'block', marginBottom: '4px', fontWeight: 600, fontSize: '0.75em', color: 'var(--text-dim)' }}>EVENT</label>
+                <select value={selectedEventID} onChange={e => setSelectedEventID(Number(e.target.value))}>
+                    {events.map(ev => <option key={ev.id} value={ev.id}>{ev.name}</option>)}
+                </select>
+            </div>
             <button onClick={() => setScannerMode(!scannerMode)} style={{ backgroundColor: scannerMode ? 'var(--danger)' : 'var(--accent)' }}>
                 {scannerMode ? '🛑 Stop Scanner' : '📷 Scanner Mode'}
             </button>

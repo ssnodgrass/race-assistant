@@ -23,18 +23,20 @@ type StopwatchService struct {
 	app        *application.App
 	timingRepo *repository.TimingRepository
 
-	mu            sync.Mutex
-	capturedTimes []models.ImportedTime
-	captureBuffer []byte
-	isCapturing   bool
-	stopSignal    chan struct{}
-	activePort    serial.Port
+	mu               sync.Mutex
+	capturedTimes    []models.ImportedTime
+	capturedSegments map[int][]models.ImportedTime
+	captureBuffer    []byte
+	isCapturing      bool
+	stopSignal       chan struct{}
+	activePort       serial.Port
 }
 
 func NewStopwatchService(timingRepo *repository.TimingRepository) *StopwatchService {
 	return &StopwatchService{
-		timingRepo:    timingRepo,
-		capturedTimes: []models.ImportedTime{},
+		timingRepo:       timingRepo,
+		capturedTimes:    []models.ImportedTime{},
+		capturedSegments: map[int][]models.ImportedTime{},
 	}
 }
 
@@ -139,6 +141,7 @@ func (s *StopwatchService) StartCapture(portName string, baudRate int, dataBits 
 	s.isCapturing = true
 	s.stopSignal = make(chan struct{})
 	s.capturedTimes = []models.ImportedTime{}
+	s.capturedSegments = map[int][]models.ImportedTime{}
 	s.captureBuffer = []byte{}
 	s.mu.Unlock()
 
@@ -180,11 +183,12 @@ func (s *StopwatchService) StopCapture() []models.ImportedTime {
 	raw = append(raw, s.captureBuffer...)
 	s.mu.Unlock()
 
-	parsed, meta := s.parseUploadedTimes(raw)
+	parsed, segments, meta := s.parseUpload(raw)
 	s.attachCaptureDump(meta, raw)
 
 	s.mu.Lock()
 	s.capturedTimes = parsed
+	s.capturedSegments = segments
 	s.mu.Unlock()
 
 	if s.app != nil {
@@ -285,7 +289,7 @@ func (s *StopwatchService) serialReaderLoop() {
 }
 
 func (s *StopwatchService) finalizeCapture(raw []byte) {
-	parsed, meta := s.parseUploadedTimes(raw)
+	parsed, segments, meta := s.parseUpload(raw)
 	meta["autoComplete"] = true
 	s.attachCaptureDump(meta, raw)
 
@@ -296,6 +300,7 @@ func (s *StopwatchService) finalizeCapture(raw []byte) {
 	}
 	s.isCapturing = false
 	s.capturedTimes = parsed
+	s.capturedSegments = segments
 	s.mu.Unlock()
 
 	if s.app != nil {
@@ -310,6 +315,11 @@ func (s *StopwatchService) finalizeCapture(raw []byte) {
 }
 
 func (s *StopwatchService) parseUploadedTimes(raw []byte) ([]models.ImportedTime, map[string]interface{}) {
+	selected, _, meta := s.parseUpload(raw)
+	return selected, meta
+}
+
+func (s *StopwatchService) parseUpload(raw []byte) ([]models.ImportedTime, map[int][]models.ImportedTime, map[string]interface{}) {
 	meta := map[string]interface{}{
 		"bytesRead":     len(raw),
 		"firstBytesHex": previewHex(raw, 64),
@@ -317,13 +327,13 @@ func (s *StopwatchService) parseUploadedTimes(raw []byte) ([]models.ImportedTime
 
 	if len(raw) == 0 {
 		meta["error"] = "no data captured"
-		return []models.ImportedTime{}, meta
+		return []models.ImportedTime{}, map[int][]models.ImportedTime{}, meta
 	}
 
 	padStart := findPaddingStart(raw)
 	if padStart <= 0 {
 		meta["error"] = "unable to locate payload padding"
-		return []models.ImportedTime{}, meta
+		return []models.ImportedTime{}, map[int][]models.ImportedTime{}, meta
 	}
 
 	markers := findSegmentMarkers(raw, padStart)
@@ -340,13 +350,13 @@ func (s *StopwatchService) parseUploadedTimes(raw []byte) ([]models.ImportedTime
 
 	if len(markers) == 0 {
 		meta["error"] = "no segment markers found"
-		return []models.ImportedTime{}, meta
+		return []models.ImportedTime{}, map[int][]models.ImportedTime{}, meta
 	}
 
 	blocks := buildSegmentBlocks(markers, padStart)
 	if len(blocks) == 0 {
 		meta["error"] = "no segment blocks found"
-		return []models.ImportedTime{}, meta
+		return []models.ImportedTime{}, map[int][]models.ImportedTime{}, meta
 	}
 
 	selectedIndex := footerFields.selectedSegment
@@ -355,28 +365,37 @@ func (s *StopwatchService) parseUploadedTimes(raw []byte) ([]models.ImportedTime
 	}
 	meta["selectedSegment"] = selectedIndex
 
-	block := blocks[selectedIndex-1]
-	records := parseBlockRecords(raw, block.start, block.end)
-	times := extractTimelineTimes(records)
+	segments := map[int][]models.ImportedTime{}
+	segmentLapCounts := make([]int, 0, len(blocks))
+	selectedRecordsRead := 0
 
-	expected := footerFields.selectedSegmentRecords
-	if expected > 0 && expected <= len(times) {
-		times = times[:expected]
+	for i, block := range blocks {
+		records := parseBlockRecords(raw, block.start, block.end)
+		times := extractTimelineTimes(records)
+
+		segIndex := i + 1
+		if segIndex == footerFields.selectedSegment {
+			expected := footerFields.selectedSegmentRecords
+			if expected > 0 && expected <= len(times) {
+				times = times[:expected]
+			}
+		}
+
+		times = sanitizeSegmentTimeline(times, footerFields.stopCentiseconds, i == len(blocks)-1)
+		segments[segIndex] = toImportedTimes(times)
+		segmentLapCounts = append(segmentLapCounts, len(times))
+
+		if segIndex == selectedIndex {
+			selectedRecordsRead = len(records)
+		}
 	}
-	times = dropControlTimelineTimes(times, footerFields.stopCentiseconds)
 
-	imported := make([]models.ImportedTime, 0, len(times))
-	for i, cs := range times {
-		imported = append(imported, models.ImportedTime{
-			Place: i + 1,
-			Time:  centisecondsToTimeString(cs),
-		})
-	}
+	selected := segments[selectedIndex]
+	meta["recordsRead"] = selectedRecordsRead
+	meta["recordsParsed"] = len(selected)
+	meta["segmentLapCounts"] = segmentLapCounts
 
-	meta["recordsRead"] = len(records)
-	meta["recordsParsed"] = len(imported)
-
-	return imported, meta
+	return selected, segments, meta
 }
 
 func (s *StopwatchService) attachCaptureDump(meta map[string]interface{}, raw []byte) {
@@ -475,7 +494,7 @@ func extractTimelineTimes(records []rawRecord) []int {
 	return times
 }
 
-func dropControlTimelineTimes(times []int, stopCentiseconds int) []int {
+func sanitizeSegmentTimeline(times []int, stopCentiseconds int, isLastSegment bool) []int {
 	if len(times) == 0 {
 		return times
 	}
@@ -488,12 +507,28 @@ func dropControlTimelineTimes(times []int, stopCentiseconds int) []int {
 		return times
 	}
 
-	// Stop marker should not be imported as a finisher lap.
+	// Intermediate segments include a terminal stop marker before the next segment header.
+	if !isLastSegment {
+		return times[:len(times)-1]
+	}
+
+	// Last segment may provide stop marker in the footer or as trailing timeline entry.
 	if stopCentiseconds > 0 && times[len(times)-1] == stopCentiseconds {
 		times = times[:len(times)-1]
 	}
 
 	return times
+}
+
+func toImportedTimes(times []int) []models.ImportedTime {
+	imported := make([]models.ImportedTime, 0, len(times))
+	for i, cs := range times {
+		imported = append(imported, models.ImportedTime{
+			Place: i + 1,
+			Time:  centisecondsToTimeString(cs),
+		})
+	}
+	return imported
 }
 
 func readFooter(raw []byte, padStart int) []byte {
@@ -655,6 +690,10 @@ func previewHex(raw []byte, max int) string {
 }
 
 func (s *StopwatchService) CommitToRace(raceID int, times []models.ImportedTime) (int, error) {
+	return s.CommitToRaceEvent(raceID, 0, false, times)
+}
+
+func (s *StopwatchService) CommitToRaceEvent(raceID int, eventID int, replaceExisting bool, times []models.ImportedTime) (int, error) {
 	db := s.timingRepo.GetDB()
 	if db == nil {
 		return 0, fmt.Errorf("no database connection")
@@ -666,10 +705,22 @@ func (s *StopwatchService) CommitToRace(raceID int, times []models.ImportedTime)
 	}
 	defer tx.Rollback()
 
+	if replaceExisting {
+		if eventID > 0 {
+			if _, err := tx.Exec("DELETE FROM timing_pulses WHERE race_id = ? AND event_id = ?", raceID, eventID); err != nil {
+				return 0, err
+			}
+		} else {
+			if _, err := tx.Exec("DELETE FROM timing_pulses WHERE race_id = ?", raceID); err != nil {
+				return 0, err
+			}
+		}
+	}
+
 	count := 0
 	for _, t := range times {
-		_, err = tx.Exec("INSERT INTO timing_pulses (race_id, place, raw_time) VALUES (?, ?, ?)",
-			raceID, t.Place, t.Time)
+		_, err = tx.Exec("INSERT INTO timing_pulses (race_id, event_id, place, raw_time) VALUES (?, ?, ?, ?)",
+			raceID, eventID, t.Place, t.Time)
 		if err == nil {
 			count++
 		}
@@ -677,4 +728,60 @@ func (s *StopwatchService) CommitToRace(raceID int, times []models.ImportedTime)
 
 	err = tx.Commit()
 	return count, err
+}
+
+func (s *StopwatchService) CommitCapturedSegments(raceID int, selections []models.SegmentEventSelection, replaceExisting bool) (int, error) {
+	db := s.timingRepo.GetDB()
+	if db == nil {
+		return 0, fmt.Errorf("no database connection")
+	}
+
+	s.mu.Lock()
+	segments := make(map[int][]models.ImportedTime, len(s.capturedSegments))
+	for segment, times := range s.capturedSegments {
+		segments[segment] = append([]models.ImportedTime(nil), times...)
+	}
+	s.mu.Unlock()
+
+	if len(segments) == 0 {
+		return 0, fmt.Errorf("no captured segments available")
+	}
+
+	tx, err := db.Begin()
+	if err != nil {
+		return 0, err
+	}
+	defer tx.Rollback()
+
+	replaced := map[int]bool{}
+	count := 0
+
+	for _, sel := range selections {
+		if sel.EventID <= 0 {
+			continue
+		}
+		times, ok := segments[sel.Segment]
+		if !ok {
+			continue
+		}
+
+		if replaceExisting && !replaced[sel.EventID] {
+			if _, err := tx.Exec("DELETE FROM timing_pulses WHERE race_id = ? AND event_id = ?", raceID, sel.EventID); err != nil {
+				return count, err
+			}
+			replaced[sel.EventID] = true
+		}
+
+		for _, t := range times {
+			if _, err := tx.Exec("INSERT INTO timing_pulses (race_id, event_id, place, raw_time) VALUES (?, ?, ?, ?)", raceID, sel.EventID, t.Place, t.Time); err != nil {
+				return count, err
+			}
+			count++
+		}
+	}
+
+	if err := tx.Commit(); err != nil {
+		return count, err
+	}
+	return count, nil
 }

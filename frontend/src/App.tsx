@@ -256,10 +256,10 @@ function App() {
                     {view === 'award_config' && <AwardConfigView events={events} />}
                     {view === 'participants' && <ParticipantManagement raceID={selectedRace.id} events={events} participants={participants} onRefresh={refreshActiveRace} onImport={() => setView('import_csv')} />}
                     {view === 'placements' && <PlacementEntry race={selectedRace} participants={participants} events={events} onRefresh={refreshActiveRace} />}
-                    {view === 'times' && <TimeEntry raceID={selectedRace.id} />}
+                    {view === 'times' && <TimeEntry raceID={selectedRace.id} events={events} />}
                     {view === 'awards' && <AwardsView events={events} mode="awards" />}
                     {view === 'reporting' && <AwardsView events={events} mode="standings" />}
-                    {view === 'stopwatch' && <StopwatchImport raceID={selectedRace.id} onComplete={() => setView('race_detail')} />}
+                    {view === 'stopwatch' && <StopwatchImport raceID={selectedRace.id} events={events} onComplete={() => setView('race_detail')} />}
                     {view === 'live_display' && <LiveResults events={events} selectedRace={selectedRace} onRefresh={refreshActiveRace} isBrowser={isBrowserMode} />}
                     {view === 'import_csv' && (
                         <CSVImport raceID={selectedRace.id} events={events} onComplete={(count) => { loadRaceDetails(selectedRace.id); setView('participants'); }} onCancel={() => setView('participants')} />

@@ -1,13 +1,15 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { TimingService } from '../../bindings/github.com/ssnodgrass/race-assistant/services';
-import { TimingPulse } from '../../bindings/github.com/ssnodgrass/race-assistant/models';
+import { TimingPulse, Event as RaceEvent } from '../../bindings/github.com/ssnodgrass/race-assistant/models';
 
 interface TimeEntryProps {
   raceID: number;
+  events: RaceEvent[];
 }
 
-export const TimeEntry: React.FC<TimeEntryProps> = ({ raceID }) => {
+export const TimeEntry: React.FC<TimeEntryProps> = ({ raceID, events }) => {
   const [pulses, setPulses] = useState<TimingPulse[]>([]);
+  const [selectedEventID, setSelectedEventID] = useState<number>(events[0]?.id || 0);
   const [targetPlace, setTargetPlace] = useState('');
   const [timeValue, setTimeValue] = useState('');
   const [editingID, setEditingID] = useState<number | null>(null);
@@ -16,12 +18,25 @@ export const TimeEntry: React.FC<TimeEntryProps> = ({ raceID }) => {
   const timeInputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
-    loadPulses();
-  }, [raceID]);
+    if (events.length > 0 && !events.some(ev => ev.id === selectedEventID)) {
+      setSelectedEventID(events[0].id);
+    }
+  }, [events, selectedEventID]);
+
+  useEffect(() => {
+    if (selectedEventID > 0) {
+      loadPulses();
+    }
+  }, [raceID, selectedEventID]);
 
   const loadPulses = () => {
-    TimingService.ListTimingPulses(raceID).then(data => {
-        const sorted = data || [];
+    if (!selectedEventID) {
+      setPulses([]);
+      setNextPlace(1);
+      return;
+    }
+    TimingService.ListTimingPulsesByEvent(raceID, selectedEventID).then(data => {
+        const sorted = [...(data || [])].sort((a, b) => a.place - b.place);
         setPulses(sorted);
         const next = (sorted.length > 0) ? Math.max(...sorted.map(d => d.place)) + 1 : 1;
         setNextPlace(next);
@@ -52,14 +67,14 @@ export const TimeEntry: React.FC<TimeEntryProps> = ({ raceID }) => {
     if (editingID) {
         const pulse = pulses.find(p => p.id === editingID);
         if (pulse) {
-            const updated = new TimingPulse({ ...pulse, raw_time: timeValue, place: parseInt(targetPlace) });
+            const updated = new TimingPulse({ ...pulse, event_id: selectedEventID, raw_time: timeValue, place: parseInt(targetPlace) });
             TimingService.UpdateTimingPulse(updated).then(() => {
                 loadPulses();
                 resetForm();
             }).catch(console.error);
         }
     } else {
-        TimingService.AddTimingPulse(raceID, parseInt(targetPlace), timeValue)
+        TimingService.AddTimingPulseForEvent(raceID, selectedEventID, parseInt(targetPlace), timeValue)
           .then(() => {
             loadPulses();
             setTimeValue('');
@@ -77,11 +92,31 @@ export const TimeEntry: React.FC<TimeEntryProps> = ({ raceID }) => {
     }
   };
 
+  const handleDeleteAll = () => {
+    if (!selectedEventID) return;
+    if (window.confirm("Delete all recorded times for the selected event?")) {
+      TimingService.DeleteAllTimingPulses(raceID, selectedEventID).then(() => {
+        setEditingID(null);
+        setTimeValue('');
+        loadPulses();
+      }).catch(console.error);
+    }
+  };
+
   return (
     <div style={{ display: 'flex', flexDirection: 'column', height: '100%' }}>
       <div className="flex-between" style={{ marginBottom: 'var(--space-lg)' }}>
         <h2>Manual Time Entry</h2>
-        {editingID && <button onClick={resetForm} style={{ backgroundColor: '#444' }}>Cancel Editing</button>}
+        <div className="flex-row">
+          <div style={{ minWidth: '220px' }}>
+            <label style={{ display: 'block', marginBottom: '4px', fontWeight: 600, fontSize: '0.75em', color: 'var(--text-dim)' }}>EVENT</label>
+            <select value={selectedEventID} onChange={e => setSelectedEventID(Number(e.target.value))}>
+              {events.map(ev => <option key={ev.id} value={ev.id}>{ev.name}</option>)}
+            </select>
+          </div>
+          {editingID && <button onClick={resetForm} style={{ backgroundColor: '#444' }}>Cancel Editing</button>}
+          <button onClick={handleDeleteAll} style={{ backgroundColor: 'var(--danger)' }}>Delete All Times</button>
+        </div>
       </div>
 
       <div className="card" style={{ marginBottom: 'var(--space-lg)', border: '1px solid var(--accent)', backgroundColor: 'rgba(0, 123, 255, 0.03)' }}>
