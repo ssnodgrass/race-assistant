@@ -3,6 +3,7 @@ package services
 import (
 	"database/sql"
 	"encoding/csv"
+	"fmt"
 	"io"
 	"os"
 	"strconv"
@@ -69,10 +70,10 @@ func (s *ParticipantService) GetCSVHeaders(filePath string) ([]string, error) {
 func (s *ParticipantService) ImportParticipants(
 	raceID int,
 	filePath string,
-	mapping map[string]int, // Key: model field name, Value: CSV column index
+	mapping map[string]int,
 	startBib int,
 	defaultEventID int,
-	eventMap map[string]int, // Map of Event Name -> Event ID for matching
+	eventMap map[string]int,
 ) (int, error) {
 	f, err := os.Open(filePath)
 	if err != nil {
@@ -80,9 +81,24 @@ func (s *ParticipantService) ImportParticipants(
 	}
 	defer f.Close()
 
+	// Use Transaction for bulk import
+	db := s.repo.GetDB()
+	if db == nil { return 0, fmt.Errorf("no database connection") }
+	tx, err := db.Begin()
+	if err != nil { return 0, err }
+	defer tx.Rollback()
+
+	// Get existing bibs for duplicate detection
+	existing, _ := s.repo.ListByRace(raceID)
+	existingBibs := make(map[string]bool)
+	for _, ex := range existing {
+		if ex.BibNumber != "" {
+			existingBibs[ex.BibNumber] = true
+		}
+	}
+
 	reader := csv.NewReader(f)
-	// Skip header
-	_, _ = reader.Read()
+	_, _ = reader.Read() // Skip header
 
 	count := 0
 	currentBib := startBib
@@ -101,18 +117,7 @@ func (s *ParticipantService) ImportParticipants(
 			EventID: defaultEventID,
 		}
 
-		// 1. Resolve Event if mapped
-		if idx, ok := mapping["event"]; ok && idx >= 0 && idx < len(record) {
-			csvEventName := strings.ToLower(strings.TrimSpace(record[idx]))
-			for name, id := range eventMap {
-				if strings.ToLower(name) == csvEventName || strings.Contains(csvEventName, strings.ToLower(name)) {
-					p.EventID = id
-					break
-				}
-			}
-		}
-
-		// 2. Apply Other Mappings
+		// Apply Mappings
 		if idx, ok := mapping["first_name"]; ok && idx >= 0 && idx < len(record) {
 			p.FirstName = strings.TrimSpace(record[idx])
 		}
@@ -121,9 +126,7 @@ func (s *ParticipantService) ImportParticipants(
 		}
 		if idx, ok := mapping["gender"]; ok && idx >= 0 && idx < len(record) {
 			g := strings.ToUpper(strings.TrimSpace(record[idx]))
-			if len(g) > 0 {
-				p.Gender = g[:1]
-			}
+			if len(g) > 0 { p.Gender = g[:1] }
 		}
 		if idx, ok := mapping["age"]; ok && idx >= 0 && idx < len(record) {
 			age, _ := strconv.Atoi(record[idx])
@@ -145,21 +148,50 @@ func (s *ParticipantService) ImportParticipants(
 		if idx, ok := mapping["bib"]; ok && idx >= 0 && idx < len(record) {
 			p.BibNumber = strings.TrimSpace(record[idx])
 		}
-
-		// Handle Bib Auto-increment if no bib provided or mapping missing
-		if p.BibNumber == "" && currentBib > 0 {
-			p.BibNumber = strconv.Itoa(currentBib)
-			currentBib++
+		if idx, ok := mapping["event"]; ok && idx >= 0 && idx < len(record) {
+			csvEventName := strings.ToLower(strings.TrimSpace(record[idx]))
+			for name, id := range eventMap {
+				if strings.ToLower(name) == csvEventName || strings.Contains(csvEventName, strings.ToLower(name)) {
+					p.EventID = id
+					break
+				}
+			}
 		}
 
-		if p.FirstName != "" && p.LastName != "" {
-			if err := s.repo.Create(&p); err == nil {
-				count++
+		// Validations
+		if p.FirstName == "" || p.LastName == "" { continue }
+		
+		// Duplicate Detection: ONLY Bib-based
+		if p.BibNumber != "" && existingBibs[p.BibNumber] {
+			continue // Skip if bib already exists
+		}
+
+		// Bib Auto-increment if missing
+		if p.BibNumber == "" && currentBib > 0 {
+			for {
+				candidate := strconv.Itoa(currentBib)
+				if !existingBibs[candidate] {
+					p.BibNumber = candidate
+					currentBib++
+					break
+				}
+				currentBib++
 			}
+		}
+
+		// Use manual exec on tx for performance
+		_, err = tx.Exec(`INSERT INTO participants (race_id, event_id, bib_number, first_name, last_name, gender, dob, age_on_race_day, checked_in) 
+			VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+			p.RaceID, p.EventID, p.BibNumber, p.FirstName, p.LastName, p.Gender, p.DOB, p.AgeOnRaceDay, p.CheckedIn)
+		
+		if err == nil {
+			count++
+			if p.BibNumber != "" { existingBibs[p.BibNumber] = true }
 		}
 	}
 
-	return count, nil
+	err = tx.Commit()
+	return count, err
 }
 
 func (s *ParticipantService) ReassignBibs(raceID int, startBib int) error {
@@ -168,13 +200,21 @@ func (s *ParticipantService) ReassignBibs(raceID int, startBib int) error {
 		return err
 	}
 
+	db := s.repo.GetDB()
+	if db == nil { return fmt.Errorf("no database connection") }
+
+	tx, err := db.Begin()
+	if err != nil { return err }
+	defer tx.Rollback()
+
 	currentBib := startBib
 	for i := range participants {
-		participants[i].BibNumber = strconv.Itoa(currentBib)
-		if err := s.repo.Update(&participants[i]); err != nil {
+		_, err = tx.Exec("UPDATE participants SET bib_number = ? WHERE id = ?", strconv.Itoa(currentBib), participants[i].ID)
+		if err != nil {
 			return err
 		}
 		currentBib++
 	}
-	return nil
+
+	return tx.Commit()
 }

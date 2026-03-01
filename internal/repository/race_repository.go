@@ -19,6 +19,10 @@ func (r *RaceRepository) SetDB(db *sql.DB) {
 	r.db = db
 }
 
+func (r *RaceRepository) GetDB() *sql.DB {
+	return r.db
+}
+
 func (r *RaceRepository) checkDB() error {
 	if r.db == nil {
 		return fmt.Errorf("no database connection")

@@ -51,10 +51,9 @@ func (s *DatabaseService) New() {
 		AddFilter("All Files (*.*)", "*.*").
 		PromptForSingleSelection()
 
-	if err != nil || result == "" {
-		return
+	if err == nil && result != "" {
+		s.connectTo(result)
 	}
-	s.connectTo(result)
 }
 
 func (s *DatabaseService) Open() {
@@ -63,10 +62,9 @@ func (s *DatabaseService) Open() {
 		AddFilter("Database Files (*.db)", "*.db").
 		PromptForSingleSelection()
 
-	if err != nil || result == "" {
-		return
+	if err == nil && result != "" {
+		s.connectTo(result)
 	}
-	s.connectTo(result)
 }
 
 func (s *DatabaseService) Close() {
@@ -84,7 +82,6 @@ func (s *DatabaseService) Close() {
 
 func (s *DatabaseService) OpenExternalWindow(view string, raceID int) {
 	log.Printf("[Action] Opening External Window (%s) for Race %d\n", view, raceID)
-	// We create a window with NO reference to the main menu to prevent Linux GTK crashes
 	s.app.Window.NewWithOptions(application.WebviewWindowOptions{
 		Title:  "Race Assistant Display",
 		URL:    fmt.Sprintf("/?view=%s&raceID=%d", view, raceID),
@@ -97,7 +94,7 @@ func (s *DatabaseService) connectTo(path string) {
 	dsn := fmt.Sprintf("%s?_busy_timeout=5000", path)
 	db, err := database.Connect(dsn)
 	if err != nil {
-		s.app.Dialog.Info().SetTitle("Error").SetMessage(err.Error()).Show()
+		log.Printf("Connect error: %v\n", err)
 		return
 	}
 
@@ -179,12 +176,20 @@ func main() {
 		mux.HandleFunc("/api/races", func(w http.ResponseWriter, r *http.Request) {
 			w.Header().Set("Content-Type", "application/json")
 			list, _ := raceService.ListRaces()
+			for i := range list {
+				list[i].RSU.APIKey = ""
+				list[i].RSU.APISecret = ""
+			}
 			json.NewEncoder(w).Encode(list)
 		})
 		mux.HandleFunc("/api/race", func(w http.ResponseWriter, r *http.Request) {
 			w.Header().Set("Content-Type", "application/json")
 			id, _ := strconv.Atoi(r.URL.Query().Get("id"))
 			race, _ := raceService.GetByID(id)
+			if race != nil {
+				race.RSU.APIKey = ""
+				race.RSU.APISecret = ""
+			}
 			json.NewEncoder(w).Encode(race)
 		})
 		mux.HandleFunc("/api/events", func(w http.ResponseWriter, r *http.Request) {
@@ -213,31 +218,6 @@ func main() {
 			list, _ := timingService.GetEventResults(eventID)
 			json.NewEncoder(w).Encode(list)
 		})
-		mux.HandleFunc("/api/runsignup/events", func(w http.ResponseWriter, r *http.Request) {
-			w.Header().Set("Content-Type", "application/json")
-			rsuRaceID := r.URL.Query().Get("rsuRaceID")
-			apiKey, _ := settingsService.Get("rsu_api_key")
-			apiSecret, _ := settingsService.Get("rsu_api_secret")
-			events, err := runSignUpService.GetRSUEvents(rsuRaceID, apiKey, apiSecret)
-			if err != nil {
-				http.Error(w, err.Error(), http.StatusInternalServerError)
-				return
-			}
-			json.NewEncoder(w).Encode(events)
-		})
-		mux.HandleFunc("/api/runsignup/participants", func(w http.ResponseWriter, r *http.Request) {
-			w.Header().Set("Content-Type", "application/json")
-			rsuRaceID := r.URL.Query().Get("rsuRaceID")
-			rsuEventID := r.URL.Query().Get("rsuEventID")
-			apiKey, _ := settingsService.Get("rsu_api_key")
-			apiSecret, _ := settingsService.Get("rsu_api_secret")
-			participants, err := runSignUpService.GetParticipants(rsuRaceID, rsuEventID, apiKey, apiSecret)
-			if err != nil {
-				http.Error(w, err.Error(), http.StatusInternalServerError)
-				return
-			}
-			json.NewEncoder(w).Encode(participants)
-		})
 		log.Println("Web Hub Server started on :8080")
 		http.ListenAndServe(":8080", mux)
 	}()
@@ -264,10 +244,6 @@ func main() {
 
 	dbService.app = app
 	stopwatchService.SetApp(app)
-
-	if _, err := os.Stat("race_assistant.db"); err == nil {
-		dbService.connectTo("race_assistant.db")
-	}
 
 	menu := app.NewMenu()
 	fileMenu := menu.AddSubmenu("File")
@@ -306,6 +282,10 @@ func main() {
 		Height:     768,
 		StartState: application.WindowStateMaximised,
 	})
+
+	if _, err := os.Stat("race_assistant.db"); err == nil {
+		dbService.connectTo("race_assistant.db")
+	}
 
 	err := app.Run()
 	if err != nil {

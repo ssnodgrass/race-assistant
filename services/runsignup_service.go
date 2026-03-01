@@ -68,7 +68,6 @@ func (s *RunSignUpService) GetRSUEvents(rsuRaceID string, apiKey string, apiSecr
 		return nil, fmt.Errorf("API error %d: %s", resp.StatusCode, string(body))
 	}
 
-	// Check for error inside 200 OK (some RSU endpoints do this)
 	if err := s.checkRSUError(body); err != nil {
 		return nil, err
 	}
@@ -111,7 +110,6 @@ func (s *RunSignUpService) GetParticipants(rsuRaceID string, rsuEventID string, 
 		return nil, fmt.Errorf("API error %d: %s", resp.StatusCode, string(body))
 	}
 
-	// Check for error inside 200 OK
 	if err := s.checkRSUError(body); err != nil {
 		return nil, err
 	}
@@ -125,7 +123,14 @@ func (s *RunSignUpService) GetParticipants(rsuRaceID string, rsuEventID string, 
 	for _, group := range apiResponse {
 		for _, reg := range group.Participants {
 			user := reg.User
-			dob, _ := time.Parse("2006-01-02", user.DOB)
+			
+			var dobPtr *time.Time
+			if user.DOB != "" {
+				dob, err := time.Parse("2006-01-02", user.DOB)
+				if err == nil {
+					dobPtr = &dob
+				}
+			}
 			
 			bib := ""
 			if reg.BibNum != nil {
@@ -137,7 +142,7 @@ func (s *RunSignUpService) GetParticipants(rsuRaceID string, rsuEventID string, 
 				FirstName:    user.FirstName,
 				LastName:     user.LastName,
 				Gender:       user.Gender,
-				DOB:          &dob,
+				DOB:          dobPtr,
 				AgeOnRaceDay: reg.Age,
 			})
 		}

@@ -19,6 +19,10 @@ func (r *ParticipantRepository) SetDB(db *sql.DB) {
 	r.db = db
 }
 
+func (r *ParticipantRepository) GetDB() *sql.DB {
+	return r.db
+}
+
 func (r *ParticipantRepository) checkDB() error {
 	if r.db == nil {
 		return fmt.Errorf("no database connection")

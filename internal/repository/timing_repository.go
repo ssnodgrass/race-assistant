@@ -19,6 +19,10 @@ func (r *TimingRepository) SetDB(db *sql.DB) {
 	r.db = db
 }
 
+func (r *TimingRepository) GetDB() *sql.DB {
+	return r.db
+}
+
 func (r *TimingRepository) checkDB() error {
 	if r.db == nil {
 		return fmt.Errorf("no database connection")
