@@ -4,8 +4,6 @@ import (
 	"database/sql"
 	"encoding/hex"
 	"fmt"
-	"os"
-	"path/filepath"
 	"regexp"
 	"strings"
 	"sync"
@@ -184,7 +182,6 @@ func (s *StopwatchService) StopCapture() []models.ImportedTime {
 	s.mu.Unlock()
 
 	parsed, segments, meta := s.parseUpload(raw)
-	s.attachCaptureDump(meta, raw)
 
 	s.mu.Lock()
 	s.capturedTimes = parsed
@@ -291,7 +288,6 @@ func (s *StopwatchService) serialReaderLoop() {
 func (s *StopwatchService) finalizeCapture(raw []byte) {
 	parsed, segments, meta := s.parseUpload(raw)
 	meta["autoComplete"] = true
-	s.attachCaptureDump(meta, raw)
 
 	s.mu.Lock()
 	if s.activePort != nil {
@@ -402,16 +398,6 @@ func (s *StopwatchService) parseUpload(raw []byte) ([]models.ImportedTime, map[i
 	meta["segmentLapCounts"] = segmentLapCounts
 
 	return selected, segments, meta
-}
-
-func (s *StopwatchService) attachCaptureDump(meta map[string]interface{}, raw []byte) {
-	binPath, txtPath, err := writeCaptureDumpFiles(raw)
-	if err != nil {
-		meta["dumpError"] = err.Error()
-		return
-	}
-	meta["dumpBinaryPath"] = binPath
-	meta["dumpTextPath"] = txtPath
 }
 
 type footerFields struct {
@@ -607,74 +593,6 @@ func parseCommandPayload(cmd string) ([]byte, error) {
 
 	// Fallback: plain ASCII command with CR terminator.
 	return []byte(text + "\r"), nil
-}
-
-func writeCaptureDumpFiles(raw []byte) (string, string, error) {
-	ts := time.Now().Format("20060102_150405_000")
-	baseDir := filepath.Join("debug", "stopwatch-captures")
-	if err := os.MkdirAll(baseDir, 0o755); err != nil {
-		return "", "", fmt.Errorf("create debug directory: %w", err)
-	}
-
-	binPath := filepath.Join(baseDir, fmt.Sprintf("capture_%s.bin", ts))
-	txtPath := filepath.Join(baseDir, fmt.Sprintf("capture_%s.txt", ts))
-
-	if err := os.WriteFile(binPath, raw, 0o644); err != nil {
-		return "", "", fmt.Errorf("write binary dump: %w", err)
-	}
-
-	header := []string{
-		fmt.Sprintf("timestamp=%s", time.Now().Format(time.RFC3339Nano)),
-		fmt.Sprintf("bytes=%d", len(raw)),
-		"",
-	}
-	txtBody := strings.Join(header, "\n") + formatHexASCIIDump(raw)
-
-	if err := os.WriteFile(txtPath, []byte(txtBody), 0o644); err != nil {
-		return "", "", fmt.Errorf("write text dump: %w", err)
-	}
-
-	return binPath, txtPath, nil
-}
-
-func formatHexASCIIDump(raw []byte) string {
-	if len(raw) == 0 {
-		return "(empty capture)\n"
-	}
-
-	const width = 16
-	var b strings.Builder
-	for i := 0; i < len(raw); i += width {
-		end := i + width
-		if end > len(raw) {
-			end = len(raw)
-		}
-		line := raw[i:end]
-
-		b.WriteString(fmt.Sprintf("%08x  ", i))
-		for j := 0; j < width; j++ {
-			if j < len(line) {
-				b.WriteString(fmt.Sprintf("%02x ", line[j]))
-			} else {
-				b.WriteString("   ")
-			}
-			if j == 7 {
-				b.WriteString(" ")
-			}
-		}
-
-		b.WriteString(" |")
-		for _, v := range line {
-			if v >= 32 && v <= 126 {
-				b.WriteByte(v)
-			} else {
-				b.WriteByte('.')
-			}
-		}
-		b.WriteString("|\n")
-	}
-
-	return b.String()
 }
 
 func isHexOnly(s string) bool {

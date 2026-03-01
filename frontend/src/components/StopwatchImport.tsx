@@ -20,7 +20,6 @@ export const StopwatchImport: React.FC<StopwatchImportProps> = ({ raceID, events
   const [captured, setCaptured] = useState<ImportedTime[]>([]);
   const [rawLog, setRawLog] = useState<string[]>([]);
   const [bytesRead, setBytesRead] = useState(0);
-  const [manualText, setManualText] = useState('');
   const [selectedEventID, setSelectedEventID] = useState<number>(events[0]?.id || 0);
   const [replaceExisting, setReplaceExisting] = useState(true);
   const [segmentCount, setSegmentCount] = useState(1);
@@ -58,9 +57,6 @@ export const StopwatchImport: React.FC<StopwatchImportProps> = ({ raceID, events
             stopTime?: string;
             bytesRead?: number;
             error?: string;
-            dumpTextPath?: string;
-            dumpBinaryPath?: string;
-            dumpError?: string;
             firstBytesHex?: string;
             segmentLapCounts?: number[];
         };
@@ -80,13 +76,8 @@ export const StopwatchImport: React.FC<StopwatchImportProps> = ({ raceID, events
         const line = payload?.error
             ? `Parse error: ${payload.error}`
             : `Parsed ${payload?.recordsParsed || 0} records from segment ${payload?.selectedSegment || "?"}/${payload?.segmentCount || "?"} (footer count ${payload?.selectedSegmentRecords || 0}, stop ${payload?.stopTime || "n/a"}).`;
-        const dumpLine = payload?.dumpTextPath
-            ? `Capture dump saved: ${payload.dumpTextPath} (bin: ${payload.dumpBinaryPath || "n/a"})`
-            : payload?.dumpError
-                ? `Capture dump error: ${payload.dumpError}`
-                : "";
         const firstBytesLine = payload?.firstBytesHex ? `First bytes: ${payload.firstBytesHex}` : "";
-        setRawLog(prev => [...prev, line, firstBytesLine, dumpLine].filter(Boolean).slice(-20));
+        setRawLog(prev => [...prev, line, firstBytesLine].filter(Boolean).slice(-20));
     });
 
     const unsubComplete = Events.On('stopwatch:capture-complete', (e) => {
@@ -134,13 +125,6 @@ export const StopwatchImport: React.FC<StopwatchImportProps> = ({ raceID, events
             setStatus("Listening...");
         }).catch(err => alert(err));
     }
-  };
-
-  const handleManualParse = () => {
-    StopwatchService.ParseStopwatchText(manualText).then(data => {
-        setCaptured(data || []);
-        setStatus("Reviewing (Manual)");
-    });
   };
 
   const sortedCaptured = [...captured].sort((a, b) => a.place - b.place);
@@ -264,16 +248,6 @@ export const StopwatchImport: React.FC<StopwatchImportProps> = ({ raceID, events
             </button>
         </div>
 
-        <div className="card" style={{ margin: 0 }}>
-            <h3 style={{ borderBottom: '1px solid var(--border)', paddingBottom: '8px', marginBottom: 'var(--space-md)' }}>Failsafe: Manual Paste</h3>
-            <textarea 
-                placeholder="e.g. 001 00:12:34.567"
-                style={{ width: '100%', height: '100px', backgroundColor: '#000', color: '#eee', padding: '10px', border: '1px solid var(--border)', borderRadius: '4px', resize: 'none' }}
-                value={manualText}
-                onChange={e => setManualText(e.target.value)}
-            />
-            <button onClick={handleManualParse} style={{ width: '100%', marginTop: '10px', backgroundColor: '#444' }}>Parse Pasted Text</button>
-        </div>
       </div>
 
       <div className="card" style={{ margin: 0, display: 'flex', flexDirection: 'column' }}>
