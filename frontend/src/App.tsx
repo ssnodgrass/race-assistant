@@ -19,20 +19,22 @@ import { AwardsView } from './components/AwardsView';
 import { CSVImport } from './components/CSVImport';
 import { StopwatchImport } from './components/StopwatchImport';
 import { LiveResults } from './components/LiveResults';
+import { isBrowserPreview } from './utils/runtime';
 
 import './index.css';
 
 type View = 'list' | 'race_detail' | 'create_race' | 'manage_events' | 'award_config' | 'participants' | 'placements' | 'times' | 'awards' | 'reporting' | 'import_csv' | 'stopwatch' | 'live_display';
 
 function App() {
+  const initialView = new URLSearchParams(window.location.search).get('view') as View | null;
   const [dbPath, setDbPath] = useState<string>('');
-  const [view, setView] = useState<View>('list');
+  const [view, setView] = useState<View>(initialView ?? 'list');
   const [races, setRaces] = useState<Race[]>([]);
   const [selectedRace, setSelectedRace] = useState<Race | null>(null);
   const [events, setEvents] = useState<Event[]>([]);
   const [participants, setParticipants] = useState<Participant[]>([]);
-  const [isExternalDisplay, setIsExternalDisplay] = useState(false);
-  const isBrowserMode = !(window as any).wails;
+  const [isExternalDisplay] = useState(Boolean(initialView));
+  const isBrowserMode = isBrowserPreview();
 
   const selectedRaceRef = useRef<Race | null>(null);
   useEffect(() => { 
@@ -43,7 +45,7 @@ function App() {
   }, [selectedRace]);
 
   const checkStatus = () => {
-    const isWeb = !(window as any).wails;
+    const isWeb = isBrowserMode;
     const statusCall = isWeb 
         ? fetch("/api/status").then(r => r.json())
         : DatabaseService.GetStatus();
@@ -81,13 +83,6 @@ function App() {
   useEffect(() => {
     checkStatus();
     const heartbeat = setInterval(checkStatus, 3000);
-
-    const params = new URLSearchParams(window.location.search);
-    const viewParam = params.get('view');
-    if (viewParam) {
-        setIsExternalDisplay(true);
-        setView(viewParam as View);
-    }
 
     let unsubs: (() => void)[] = [];
     if (!isBrowserMode) {

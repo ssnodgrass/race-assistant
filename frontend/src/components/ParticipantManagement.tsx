@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { ParticipantService, RunSignUpService, RaceService } from '../../bindings/github.com/ssnodgrass/race-assistant/services';
 import { Participant, Event as RaceEvent, RSUEvent } from '../../bindings/github.com/ssnodgrass/race-assistant/models';
+import { isBrowserPreview } from '../utils/runtime';
 
 interface ParticipantManagementProps {
   raceID: number;
@@ -32,7 +33,7 @@ export const ParticipantManagement: React.FC<ParticipantManagementProps> = ({ ra
   const [startBib, setStartBib] = useState('100');
   const [assignNewBibs, setAssignNewBibs] = useState(true);
 
-  const isBrowser = !(window as any).wails;
+  const isBrowser = isBrowserPreview();
 
   useEffect(() => {
     if (showRSUImport) loadRSUInfo();
