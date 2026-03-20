@@ -47,6 +47,11 @@ func (s *ParticipantService) DeleteParticipant(id int) error {
 	return s.repo.Delete(id)
 }
 
+func (s *ParticipantService) DeleteParticipantsByRace(raceID int) (int, error) {
+	count, err := s.repo.DeleteByRace(raceID)
+	return int(count), err
+}
+
 func (s *ParticipantService) ToggleCheckIn(id int) error {
 	p, err := s.repo.GetByID(id)
 	if err != nil {
@@ -74,6 +79,7 @@ func (s *ParticipantService) ImportParticipants(
 	startBib int,
 	defaultEventID int,
 	eventMap map[string]int,
+	replaceExisting bool,
 ) (int, error) {
 	f, err := os.Open(filePath)
 	if err != nil {
@@ -83,13 +89,26 @@ func (s *ParticipantService) ImportParticipants(
 
 	// Use Transaction for bulk import
 	db := s.repo.GetDB()
-	if db == nil { return 0, fmt.Errorf("no database connection") }
+	if db == nil {
+		return 0, fmt.Errorf("no database connection")
+	}
 	tx, err := db.Begin()
-	if err != nil { return 0, err }
+	if err != nil {
+		return 0, err
+	}
 	defer tx.Rollback()
 
+	if replaceExisting {
+		if _, err := tx.Exec("DELETE FROM participants WHERE race_id = ?", raceID); err != nil {
+			return 0, err
+		}
+	}
+
 	// Get existing bibs for duplicate detection
-	existing, _ := s.repo.ListByRace(raceID)
+	existing := []models.Participant{}
+	if !replaceExisting {
+		existing, _ = s.repo.ListByRace(raceID)
+	}
 	existingBibs := make(map[string]bool)
 	for _, ex := range existing {
 		if ex.BibNumber != "" {
@@ -126,7 +145,9 @@ func (s *ParticipantService) ImportParticipants(
 		}
 		if idx, ok := mapping["gender"]; ok && idx >= 0 && idx < len(record) {
 			g := strings.ToUpper(strings.TrimSpace(record[idx]))
-			if len(g) > 0 { p.Gender = g[:1] }
+			if len(g) > 0 {
+				p.Gender = g[:1]
+			}
 		}
 		if idx, ok := mapping["age"]; ok && idx >= 0 && idx < len(record) {
 			age, _ := strconv.Atoi(record[idx])
@@ -159,8 +180,10 @@ func (s *ParticipantService) ImportParticipants(
 		}
 
 		// Validations
-		if p.FirstName == "" || p.LastName == "" { continue }
-		
+		if p.FirstName == "" || p.LastName == "" {
+			continue
+		}
+
 		// Duplicate Detection: ONLY Bib-based
 		if p.BibNumber != "" && existingBibs[p.BibNumber] {
 			continue // Skip if bib already exists
@@ -183,10 +206,12 @@ func (s *ParticipantService) ImportParticipants(
 		_, err = tx.Exec(`INSERT INTO participants (race_id, event_id, bib_number, first_name, last_name, gender, dob, age_on_race_day, checked_in) 
 			VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
 			p.RaceID, p.EventID, p.BibNumber, p.FirstName, p.LastName, p.Gender, p.DOB, p.AgeOnRaceDay, p.CheckedIn)
-		
+
 		if err == nil {
 			count++
-			if p.BibNumber != "" { existingBibs[p.BibNumber] = true }
+			if p.BibNumber != "" {
+				existingBibs[p.BibNumber] = true
+			}
 		}
 	}
 
@@ -201,10 +226,14 @@ func (s *ParticipantService) ReassignBibs(raceID int, startBib int) error {
 	}
 
 	db := s.repo.GetDB()
-	if db == nil { return fmt.Errorf("no database connection") }
+	if db == nil {
+		return fmt.Errorf("no database connection")
+	}
 
 	tx, err := db.Begin()
-	if err != nil { return err }
+	if err != nil {
+		return err
+	}
 	defer tx.Rollback()
 
 	currentBib := startBib

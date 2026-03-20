@@ -112,3 +112,14 @@ func (r *ParticipantRepository) Delete(id int) error {
 	_, err := r.db.Exec("DELETE FROM participants WHERE id = ?", id)
 	return err
 }
+
+func (r *ParticipantRepository) DeleteByRace(raceID int) (int64, error) {
+	if err := r.checkDB(); err != nil {
+		return 0, err
+	}
+	res, err := r.db.Exec("DELETE FROM participants WHERE race_id = ?", raceID)
+	if err != nil {
+		return 0, err
+	}
+	return res.RowsAffected()
+}

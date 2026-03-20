@@ -16,6 +16,7 @@ export const CSVImport: React.FC<CSVImportProps> = ({ raceID, events, onComplete
   const [mapping, setMapping] = useState<Record<string, number>>({});
   const [startBib, setStartBib] = useState('100');
   const [assignNewBibs, setAssignNewBibs] = useState(false);
+  const [replaceExisting, setReplaceExisting] = useState(false);
   const [defaultEventID, setDefaultEventID] = useState(events[0]?.id || 0);
   const [isImporting, setIsImporting] = useState(false);
 
@@ -53,6 +54,10 @@ export const CSVImport: React.FC<CSVImportProps> = ({ raceID, events, onComplete
 
   const handleImport = async () => {
     if (!filePath) return;
+    if (replaceExisting) {
+        const confirmed = window.confirm("Delete all current participants for this race before importing this CSV?");
+        if (!confirmed) return;
+    }
     setIsImporting(true);
     try {
         const eventMap: Record<string, number> = {};
@@ -64,7 +69,8 @@ export const CSVImport: React.FC<CSVImportProps> = ({ raceID, events, onComplete
             mapping, 
             assignNewBibs ? parseInt(startBib) : 0, 
             defaultEventID, 
-            eventMap
+            eventMap,
+            replaceExisting
         );
         alert(`Successfully imported ${count} participants.`);
         onComplete(count);
@@ -123,6 +129,10 @@ export const CSVImport: React.FC<CSVImportProps> = ({ raceID, events, onComplete
                 </div>
                 
                 <div style={{ backgroundColor: '#ffffff05', padding: 'var(--space-md)', borderRadius: 'var(--radius)', border: '1px solid var(--border)', marginBottom: '20px' }}>
+                    <label style={{ display: 'flex', alignItems: 'center', gap: '10px', cursor: 'pointer', marginBottom: '15px' }}>
+                        <input type="checkbox" checked={replaceExisting} onChange={e => setReplaceExisting(e.target.checked)} style={{ width: 'auto' }} />
+                        <span style={{ fontWeight: 600, fontSize: '0.85em', color: 'var(--text-dim)' }}>REPLACE CURRENT PARTICIPANTS FIRST</span>
+                    </label>
                     <label style={{ display: 'flex', alignItems: 'center', gap: '10px', cursor: 'pointer', marginBottom: assignNewBibs ? '15px' : 0 }}>
                         <input type="checkbox" checked={assignNewBibs} onChange={e => setAssignNewBibs(e.target.checked)} style={{ width: 'auto' }} />
                         <span style={{ fontWeight: 600, fontSize: '0.85em', color: 'var(--text-dim)' }}>ASSIGN NEW BIB NUMBERS</span>

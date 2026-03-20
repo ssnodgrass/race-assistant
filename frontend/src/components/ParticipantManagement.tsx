@@ -18,6 +18,7 @@ export const ParticipantManagement: React.FC<ParticipantManagementProps> = ({ ra
   const [showRSUImport, setShowRSUImport] = useState(false);
   const [editingID, setEditingID] = useState<number | null>(null);
   const [isSyncing, setIsSyncing] = useState(false);
+  const [isDeletingAll, setIsDeletingAll] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
   const [form, setForm] = useState({
     bib: '', first: '', last: '', gender: 'M', age: '30', dob: '', eventID: events[0]?.id || 0, checked: false
@@ -32,6 +33,7 @@ export const ParticipantManagement: React.FC<ParticipantManagementProps> = ({ ra
   const [eventMappings, setEventMappings] = useState<Record<number, number>>({}); 
   const [startBib, setStartBib] = useState('100');
   const [assignNewBibs, setAssignNewBibs] = useState(true);
+  const [replaceParticipantsOnImport, setReplaceParticipantsOnImport] = useState(false);
 
   const isBrowser = isBrowserPreview();
 
@@ -63,17 +65,27 @@ export const ParticipantManagement: React.FC<ParticipantManagementProps> = ({ ra
         return alert("Configure RunSignUp credentials in the Race Dashboard first!");
     }
 
+    if (replaceParticipantsOnImport) {
+        const confirmed = window.confirm(`Delete all ${participants.length} current participants before importing from RunSignUp?`);
+        if (!confirmed) return;
+    }
+
     setIsSyncing(true);
     let total = 0;
     let nextBib = parseInt(startBib) || 1;
+    let existingParticipants = replaceParticipantsOnImport ? [] : [...participants];
 
     try {
+        if (replaceParticipantsOnImport) {
+            await ParticipantService.DeleteParticipantsByRace(raceID);
+        }
+
         for (const rsuEv of rsuEvents) {
             const localEventID = eventMappings[rsuEv.event_id];
             if (!localEventID) continue; 
             const incoming = await RunSignUpService.GetParticipants(race.rsu.race_id, rsuEv.event_id.toString(), race.rsu.api_key, race.rsu.api_secret);
             for (const p of incoming) {
-                const isDup = participants.some(it => {
+                const isDup = existingParticipants.some(it => {
                     if (p.bib_number && it.bib_number === p.bib_number) return true;
                     if (!p.bib_number && it.first_name === p.first_name && it.last_name === p.last_name) return true;
                     return false;
@@ -85,7 +97,8 @@ export const ParticipantManagement: React.FC<ParticipantManagementProps> = ({ ra
                         p.bib_number = nextBib.toString();
                         nextBib++;
                     }
-                    await ParticipantService.AddParticipant(new Participant(p));
+                    const created = await ParticipantService.AddParticipant(new Participant(p));
+                    existingParticipants.push(created);
                     total++;
                 }
             }
@@ -116,6 +129,23 @@ export const ParticipantManagement: React.FC<ParticipantManagementProps> = ({ ra
 
   const handleDelete = (id: number, name: string) => {
     if (window.confirm(`Delete ${name}?`)) ParticipantService.DeleteParticipant(id).then(onRefresh).catch(console.error);
+  };
+
+  const handleDeleteAllParticipants = async () => {
+    if (participants.length === 0) return;
+    const confirmed = window.confirm(`Delete all ${participants.length} participants for this race?`);
+    if (!confirmed) return;
+
+    setIsDeletingAll(true);
+    try {
+      const count = await ParticipantService.DeleteParticipantsByRace(raceID);
+      alert(`Deleted ${count} participants.`);
+      onRefresh();
+    } catch (e) {
+      alert("Bulk delete failed: " + e);
+    } finally {
+      setIsDeletingAll(false);
+    }
   };
 
   const handleSubmit = (e: React.FormEvent) => {
@@ -165,6 +195,13 @@ export const ParticipantManagement: React.FC<ParticipantManagementProps> = ({ ra
                 const start = window.prompt("Start bib sequence at:", "100");
                 if (start) ParticipantService.ReassignBibs(raceID, parseInt(start)).then(onRefresh);
             }} style={{ backgroundColor: '#666' }}>Bulk Bibs</button>
+            <button
+                onClick={handleDeleteAllParticipants}
+                style={{ backgroundColor: 'var(--danger)' }}
+                disabled={participants.length === 0 || isDeletingAll}
+            >
+                {isDeletingAll ? 'Deleting...' : 'Delete All'}
+            </button>
         </div>
       </div>
 
@@ -206,6 +243,10 @@ export const ParticipantManagement: React.FC<ParticipantManagementProps> = ({ ra
                 <div>
                     <h4 style={{ color: 'var(--text-dim)', textTransform: 'uppercase', fontSize: '0.8rem', letterSpacing: '0.05em' }}>2. Bib Assignment</h4>
                     <div style={{ backgroundColor: '#ffffff05', padding: 'var(--space-md)', borderRadius: 'var(--radius)' }}>
+                        <label style={{ display: 'flex', alignItems: 'center', gap: '10px', cursor: 'pointer', marginBottom: '15px' }}>
+                            <input type="checkbox" checked={replaceParticipantsOnImport} onChange={e => setReplaceParticipantsOnImport(e.target.checked)} style={{ width: 'auto' }} />
+                            <span>Replace all current participants before import</span>
+                        </label>
                         <label style={{ display: 'flex', alignItems: 'center', gap: '10px', cursor: 'pointer', marginBottom: assignNewBibs ? '15px' : 0 }}>
                             <input type="checkbox" checked={assignNewBibs} onChange={e => setAssignNewBibs(e.target.checked)} style={{ width: 'auto' }} />
                             <span>Assign new bibs if missing in RSU</span>
