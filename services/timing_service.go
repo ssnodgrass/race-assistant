@@ -122,6 +122,10 @@ func (s *TimingService) DeletePlacementForEvent(raceID, eventID, place int) erro
 	return s.repo.DeleteChuteAssignmentByEvent(raceID, eventID, place)
 }
 
+func (s *TimingService) DeleteAllPlacements(raceID, eventID int) error {
+	return s.repo.DeletePlacements(raceID, eventID)
+}
+
 func (s *TimingService) ListPlacementsByEvent(raceID, eventID int) ([]models.ChuteAssignment, error) {
 	return s.repo.ListPlacementsByEvent(raceID, eventID)
 }

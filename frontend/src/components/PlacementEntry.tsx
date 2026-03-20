@@ -128,6 +128,27 @@ export const PlacementEntry: React.FC<PlacementEntryProps> = ({ race, participan
     }
   };
 
+  const handleDeleteAll = () => {
+    if (!selectedEventID) return;
+    if (window.confirm("Delete all placements for the selected event?")) {
+      TimingService.DeleteAllPlacements(race.id, selectedEventID).then(() => {
+        setLastScanned(null);
+        setBib('');
+        loadPlacements();
+      }).catch(console.error);
+    }
+  };
+
+  const handleDeleteAllRace = () => {
+    if (window.confirm("Delete all placements across all events for this race?")) {
+      TimingService.DeleteAllPlacements(race.id, 0).then(() => {
+        setLastScanned(null);
+        setBib('');
+        loadPlacements();
+      }).catch(console.error);
+    }
+  };
+
   const eventParticipants = participants.filter(p => p.event_id === selectedEventID);
   const unassigned = eventParticipants.filter(p => !placements.some(pl => pl.bib_number === p.bib_number));
   const filteredUnassigned = unassigned.filter(p => 
@@ -166,6 +187,8 @@ export const PlacementEntry: React.FC<PlacementEntryProps> = ({ race, participan
             <button onClick={() => setShowUnassigned(!showUnassigned)} style={{ backgroundColor: '#444' }}>
                 {showUnassigned ? 'Hide Sidebar' : 'Show Unassigned'}
             </button>
+            <button onClick={handleDeleteAll} style={{ backgroundColor: 'var(--danger)' }}>Delete All Placements</button>
+            <button onClick={handleDeleteAllRace} style={{ backgroundColor: '#7a1f1f' }}>Delete All Race Placements</button>
         </div>
       </div>
 
