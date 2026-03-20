@@ -14,6 +14,7 @@ bin/
 build/bin/
 dist/
 frontend/dist/
+.task/
 
 # Wails v3 Generated Bindings
 # It is generally recommended to ignore these as they are regenerated on build
