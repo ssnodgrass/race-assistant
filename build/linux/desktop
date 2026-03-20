@@ -1,13 +1,13 @@
 [Desktop Entry]
 Version=1.0
-Name=My Product
-Comment=A myapptest application
+Name=Race Assistant
+Comment=A streamlined race day experience for small-scale local 5K road races 
 # The Exec line includes %u to pass the URL to the application
-Exec=/usr/local/bin/myapptest %u
+Exec=/usr/local/bin/Race Assistant %u
 Terminal=false
 Type=Application
-Icon=myapptest
+Icon=Race Assistant
 Categories=Utility;
-StartupWMClass=myapptest
+StartupWMClass=Race Assistant
 
  

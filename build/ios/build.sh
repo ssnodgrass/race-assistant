@@ -2,10 +2,10 @@
 set -e
 
 # Build configuration
-APP_NAME="myapptest"
-BUNDLE_ID="com.example.myapptest"
-VERSION="0.1.0"
-BUILD_NUMBER="0.1.0"
+APP_NAME="Race Assistant"
+BUNDLE_ID="com.ssnodgrass.raceassistant"
+VERSION="1.1.0"
+BUILD_NUMBER="1.1.0"
 BUILD_DIR="build/ios"
 TARGET="simulator"
 
