@@ -1,13 +1,13 @@
 [Desktop Entry]
 Version=1.0
 Name=Race Assistant
-Comment=A streamlined race day experience for small-scale local 5K road races 
+Comment=A streamlined race day experience for small-scale local 5K road races
 # The Exec line includes %u to pass the URL to the application
-Exec=/usr/local/bin/Race Assistant %u
+Exec=/usr/local/bin/race-assistant %u
 Terminal=false
 Type=Application
-Icon=Race Assistant
+Icon=race-assistant
 Categories=Utility;
-StartupWMClass=Race Assistant
+StartupWMClass=race-assistant
 
  

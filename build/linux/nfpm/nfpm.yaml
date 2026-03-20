@@ -3,26 +3,26 @@
 #
 # The lines below are called `modelines`. See `:help modeline`
 
-name: "Race Assistant"
+name: "race-assistant"
 arch: ${GOARCH}
 platform: "linux"
-version: "1.1.0"
+version: "1.1.1"
 section: "default"
 priority: "extra"
 maintainer: ${GIT_COMMITTER_NAME} <${GIT_COMMITTER_EMAIL}>
-description: "A streamlined race day experience for small-scale local 5K road races "
+description: "A streamlined race day experience for small-scale local 5K road races"
 vendor: "Scott Snodgrass"
 homepage: "https://wails.io"
 license: "MIT"
 release: "1"
 
 contents:
-  - src: "./bin/Race Assistant"
-    dst: "/usr/local/bin/Race Assistant"
+  - src: "./bin/race-assistant"
+    dst: "/usr/local/bin/race-assistant"
   - src: "./build/appicon.png"
-    dst: "/usr/share/icons/hicolor/128x128/apps/Race Assistant.png"
-  - src: "./build/linux/Race Assistant.desktop"
-    dst: "/usr/share/applications/Race Assistant.desktop"
+    dst: "/usr/share/icons/hicolor/128x128/apps/race-assistant.png"
+  - src: "./build/linux/race-assistant.desktop"
+    dst: "/usr/share/applications/race-assistant.desktop"
 
 # Default dependencies for Debian 12/Ubuntu 22.04+ with WebKit 4.1
 depends:

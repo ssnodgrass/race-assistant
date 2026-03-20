@@ -1,0 +1,10 @@
+[Desktop Entry]
+Type=Application
+Name=race-assistant
+Exec=race-assistant
+Icon=race-assistant
+Categories=Development;
+Terminal=false
+Keywords=wails
+Version=1.0
+StartupNotify=false

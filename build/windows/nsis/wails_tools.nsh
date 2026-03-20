@@ -5,7 +5,7 @@
 !include "FileFunc.nsh"
 
 !ifndef INFO_PROJECTNAME
-    !define INFO_PROJECTNAME "Race Assistant"
+    !define INFO_PROJECTNAME "race-assistant"
 !endif
 !ifndef INFO_COMPANYNAME
     !define INFO_COMPANYNAME "Scott Snodgrass"
@@ -14,7 +14,7 @@
     !define INFO_PRODUCTNAME "Race Assistant"
 !endif
 !ifndef INFO_PRODUCTVERSION
-    !define INFO_PRODUCTVERSION "1.1.0"
+    !define INFO_PRODUCTVERSION "1.1.1"
 !endif
 !ifndef INFO_COPYRIGHT
     !define INFO_COPYRIGHT "(c) 2026, Scott Snodgrass"
