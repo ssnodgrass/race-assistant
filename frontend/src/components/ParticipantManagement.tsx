@@ -19,6 +19,7 @@ export const ParticipantManagement: React.FC<ParticipantManagementProps> = ({ ra
   const [editingID, setEditingID] = useState<number | null>(null);
   const [isSyncing, setIsSyncing] = useState(false);
   const [isDeletingAll, setIsDeletingAll] = useState(false);
+  const [isClearingBibs, setIsClearingBibs] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
   const [form, setForm] = useState({
     bib: '', first: '', last: '', gender: 'M', age: '30', dob: '', eventID: events[0]?.id || 0, checked: false
@@ -148,6 +149,25 @@ export const ParticipantManagement: React.FC<ParticipantManagementProps> = ({ ra
     }
   };
 
+  const handleClearAllBibs = async () => {
+    const assignedBibCount = participants.filter(p => p.bib_number.trim() !== '').length;
+    if (assignedBibCount === 0) return;
+
+    const confirmed = window.confirm(`Clear bib numbers for ${assignedBibCount} participants in this race? Existing placements and chute assignments will not be changed.`);
+    if (!confirmed) return;
+
+    setIsClearingBibs(true);
+    try {
+      const count = await ParticipantService.ClearBibNumbersByRace(raceID);
+      alert(`Cleared bib numbers for ${count} participants.`);
+      onRefresh();
+    } catch (e) {
+      alert("Bulk bib clear failed: " + e);
+    } finally {
+      setIsClearingBibs(false);
+    }
+  };
+
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     const p = new Participant({
@@ -195,6 +215,13 @@ export const ParticipantManagement: React.FC<ParticipantManagementProps> = ({ ra
                 const start = window.prompt("Start bib sequence at:", "100");
                 if (start) ParticipantService.ReassignBibs(raceID, parseInt(start)).then(onRefresh);
             }} style={{ backgroundColor: '#666' }}>Bulk Bibs</button>
+            <button
+                onClick={handleClearAllBibs}
+                style={{ backgroundColor: '#8a5a00' }}
+                disabled={participants.every(p => p.bib_number.trim() === '') || isClearingBibs}
+            >
+                {isClearingBibs ? 'Clearing...' : 'Clear Bibs'}
+            </button>
             <button
                 onClick={handleDeleteAllParticipants}
                 style={{ backgroundColor: 'var(--danger)' }}
@@ -269,7 +296,7 @@ export const ParticipantManagement: React.FC<ParticipantManagementProps> = ({ ra
           <form onSubmit={handleSubmit} style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: '20px' }}>
             <div className="flex-row" style={{ flexDirection: 'column', alignItems: 'stretch' }}>
                 <label style={{ display: 'block', marginBottom: '8px', fontWeight: 600, fontSize: '0.85em', color: 'var(--text-dim)' }}>BIB #</label>
-                <input value={form.bib} onChange={e => setForm({...form, bib: e.target.value})} required />
+                <input value={form.bib} onChange={e => setForm({...form, bib: e.target.value})} placeholder="Optional until check-in" />
             </div>
             <div className="flex-row" style={{ flexDirection: 'column', alignItems: 'stretch' }}>
                 <label style={{ display: 'block', marginBottom: '8px', fontWeight: 600, fontSize: '0.85em', color: 'var(--text-dim)' }}>EVENT</label>

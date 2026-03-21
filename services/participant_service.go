@@ -52,6 +52,11 @@ func (s *ParticipantService) DeleteParticipantsByRace(raceID int) (int, error) {
 	return int(count), err
 }
 
+func (s *ParticipantService) ClearBibNumbersByRace(raceID int) (int, error) {
+	count, err := s.repo.ClearBibNumbersByRace(raceID)
+	return int(count), err
+}
+
 func (s *ParticipantService) ToggleCheckIn(id int) error {
 	p, err := s.repo.GetByID(id)
 	if err != nil {

@@ -123,3 +123,14 @@ func (r *ParticipantRepository) DeleteByRace(raceID int) (int64, error) {
 	}
 	return res.RowsAffected()
 }
+
+func (r *ParticipantRepository) ClearBibNumbersByRace(raceID int) (int64, error) {
+	if err := r.checkDB(); err != nil {
+		return 0, err
+	}
+	res, err := r.db.Exec("UPDATE participants SET bib_number = '' WHERE race_id = ? AND bib_number != ''", raceID)
+	if err != nil {
+		return 0, err
+	}
+	return res.RowsAffected()
+}

@@ -60,6 +60,64 @@ func TestDeleteParticipantsByRace(t *testing.T) {
 	}
 }
 
+func TestClearBibNumbersByRace(t *testing.T) {
+	service, raceRepo, eventRepo, partRepo := setupParticipantServiceTest(t)
+
+	race := models.Race{Name: "Clear Bibs Test", Date: time.Now()}
+	if err := raceRepo.Create(&race); err != nil {
+		t.Fatalf("Create race failed: %v", err)
+	}
+
+	event := models.Event{RaceID: race.ID, Name: "5K", DistanceKM: 5}
+	if err := eventRepo.Create(&event); err != nil {
+		t.Fatalf("Create event failed: %v", err)
+	}
+
+	for _, bib := range []string{"101", "102"} {
+		if err := partRepo.Create(&models.Participant{
+			RaceID:       race.ID,
+			EventID:      event.ID,
+			BibNumber:    bib,
+			FirstName:    "Runner",
+			LastName:     bib,
+			Gender:       "M",
+			AgeOnRaceDay: 30,
+		}); err != nil {
+			t.Fatalf("Create participant failed: %v", err)
+		}
+	}
+
+	if err := partRepo.Create(&models.Participant{
+		RaceID:       race.ID,
+		EventID:      event.ID,
+		BibNumber:    "",
+		FirstName:    "No",
+		LastName:     "Bib",
+		Gender:       "F",
+		AgeOnRaceDay: 28,
+	}); err != nil {
+		t.Fatalf("Create participant without bib failed: %v", err)
+	}
+
+	count, err := service.ClearBibNumbersByRace(race.ID)
+	if err != nil {
+		t.Fatalf("ClearBibNumbersByRace failed: %v", err)
+	}
+	if count != 2 {
+		t.Fatalf("ClearBibNumbersByRace cleared %d bibs, want 2", count)
+	}
+
+	participants, err := service.ListParticipants(race.ID)
+	if err != nil {
+		t.Fatalf("ListParticipants failed: %v", err)
+	}
+	for _, participant := range participants {
+		if participant.BibNumber != "" {
+			t.Fatalf("participant %d still has bib %q after clear", participant.ID, participant.BibNumber)
+		}
+	}
+}
+
 func TestImportParticipantsReplaceExisting(t *testing.T) {
 	service, raceRepo, eventRepo, partRepo := setupParticipantServiceTest(t)
 
