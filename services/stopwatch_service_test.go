@@ -222,6 +222,142 @@ func TestParseUploadedTimes_UsesLeadingBlocksPerFooterSegmentCount(t *testing.T)
 	}
 }
 
+func TestParseUploadedTimes_IgnoresLeadingPaddingNoise(t *testing.T) {
+	svc := NewStopwatchService(nil)
+
+	raw := make([]byte, 0, 256)
+	for i := 0; i < 80; i++ {
+		raw = append(raw, 0x55)
+	}
+	raw = append(raw, buildTestCapture(
+		0x92,
+		[][]rawRecord{
+			{
+				{setID: 0, centiseconds: 0},
+				{setID: 0, centiseconds: 215},
+				{setID: 0, centiseconds: 313},
+				{setID: 0, centiseconds: 596},
+				{setID: 0, centiseconds: 596},
+			},
+		},
+		1,
+		5,
+		596,
+	)...)
+
+	got, meta := svc.parseUploadedTimes(raw)
+
+	if len(got) != 3 {
+		t.Fatalf("expected 3 parsed lap records, got %d", len(got))
+	}
+	if meta["error"] != nil {
+		t.Fatalf("unexpected parse error: %v", meta["error"])
+	}
+	if meta["firstMarkerOffset"] == nil {
+		t.Fatalf("expected firstMarkerOffset in metadata")
+	}
+}
+
+func TestParseUploadedTimes_Accepts1102MarkerVariant(t *testing.T) {
+	svc := NewStopwatchService(nil)
+
+	raw := buildTestCapture(
+		0x92,
+		[][]rawRecord{
+			{
+				{setID: 0, centiseconds: 0},
+				{setID: 0, centiseconds: 215},
+				{setID: 0, centiseconds: 313},
+				{setID: 0, centiseconds: 596},
+				{setID: 0, centiseconds: 596},
+			},
+		},
+		1,
+		5,
+		596,
+	)
+	copy(raw[:8], []byte{0xff, 0x20, 0x11, 0x02, 0x09, 0x09, 0x36, 0x04})
+
+	got, meta := svc.parseUploadedTimes(raw)
+
+	if len(got) != 3 {
+		t.Fatalf("expected 3 parsed lap records, got %d", len(got))
+	}
+	if meta["markerCount"] != 1 {
+		t.Fatalf("markerCount mismatch: got %v want 1", meta["markerCount"])
+	}
+	if meta["error"] != nil {
+		t.Fatalf("unexpected parse error: %v", meta["error"])
+	}
+}
+
+func TestParseUploadedTimes_UsesSetIDAsHighWordForLongRuns(t *testing.T) {
+	svc := NewStopwatchService(nil)
+
+	raw := buildTestCapture(
+		0x92,
+		[][]rawRecord{
+			{
+				{setID: 1, centiseconds: 43410},
+				{setID: 1, centiseconds: 44932},
+				{setID: 2, centiseconds: 1317},
+				{setID: 2, centiseconds: 5493},
+				{setID: 5, centiseconds: 12822},
+				{setID: 5, centiseconds: 12822}, // duplicated stop marker
+			},
+		},
+		1,
+		6,
+		340502,
+	)
+
+	got, meta := svc.parseUploadedTimes(raw)
+
+	if len(got) != 5 {
+		t.Fatalf("expected 5 parsed records, got %d", len(got))
+	}
+
+	want := []string{
+		"00:18:09.46",
+		"00:18:24.68",
+		"00:22:03.89",
+		"00:22:45.65",
+		"00:56:45.02",
+	}
+	for i := range want {
+		if got[i].Time != want[i] {
+			t.Fatalf("record %d time mismatch: got %s want %s", i+1, got[i].Time, want[i])
+		}
+	}
+
+	if meta["stopTime"] != "00:56:45.02" {
+		t.Fatalf("stopTime mismatch: got %v want 00:56:45.02", meta["stopTime"])
+	}
+}
+
+func TestTrimTimelineAtReset(t *testing.T) {
+	times := []int{
+		108946,
+		110468,
+		112344,
+		467773,
+		419,
+		480,
+		373245,
+	}
+
+	got, trimmed := trimTimelineAtReset(times)
+	if len(got) != 4 {
+		t.Fatalf("expected 4 times before reset, got %d", len(got))
+	}
+	if got[len(got)-1] != 467773 {
+		t.Fatalf("expected last kept time 467773, got %d", got[len(got)-1])
+	}
+	if !trimmed {
+		t.Fatalf("expected reset trim flag to be true")
+	}
+}
+
 func buildTestCapture(protoByte byte, segments [][]rawRecord, selectedSegment int, selectedCount int, stopCentiseconds int) []byte {
 	return buildTestCaptureWithFooterSegmentCount(protoByte, segments, len(segments), selectedSegment, selectedCount, stopCentiseconds)
 }
@@ -251,7 +387,7 @@ func buildTestCaptureWithFooterSegmentCount(protoByte byte, segments [][]rawReco
 		0x00, 0x00, // unknown session field
 		byte(selectedSegment >> 8), byte(selectedSegment & 0xff),
 		byte(selectedCount >> 8), byte(selectedCount & 0xff),
-		0x00, // prefix for stop field
+		byte(stopCentiseconds >> 16), // high byte for long-run stop field
 		byte(stopCentiseconds >> 8), byte(stopCentiseconds & 0xff),
 		0x00,                   // suffix for stop field
 		0x00, 0x00, 0x00, 0x09, // filler to mimic real footer shape

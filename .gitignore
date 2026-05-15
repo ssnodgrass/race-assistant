@@ -48,3 +48,5 @@ yarn-error.log*
 *.db-shm
 *.db-wal
 race_assistant.db
+
+artifacts

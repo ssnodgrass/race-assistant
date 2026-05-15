@@ -2,9 +2,15 @@ package services
 
 import (
 	"database/sql"
+	"encoding/csv"
 	"encoding/hex"
 	"fmt"
+	"io"
+	"math"
+	"os"
 	"regexp"
+	"sort"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -17,17 +23,26 @@ import (
 
 var timeRegex = regexp.MustCompile(`(\d{1,2}:)?\d{1,2}:\d{2}\.\d{1,3}`)
 
+var stopwatchUploadCommand = []byte{0x14, 0x14}
+
+const (
+	stopwatchSettleDelay   = 500 * time.Millisecond
+	stopwatchRetryInterval = 2 * time.Second
+	stopwatchMaxRetries    = 4
+)
+
 type StopwatchService struct {
 	app        *application.App
 	timingRepo *repository.TimingRepository
 
-	mu               sync.Mutex
-	capturedTimes    []models.ImportedTime
-	capturedSegments map[int][]models.ImportedTime
-	captureBuffer    []byte
-	isCapturing      bool
-	stopSignal       chan struct{}
-	activePort       serial.Port
+	mu                  sync.Mutex
+	capturedTimes       []models.ImportedTime
+	capturedSegments    map[int][]models.ImportedTime
+	captureBuffer       []byte
+	includeTerminalStop bool
+	isCapturing         bool
+	stopSignal          chan struct{}
+	activePort          serial.Port
 }
 
 func NewStopwatchService(timingRepo *repository.TimingRepository) *StopwatchService {
@@ -88,7 +103,7 @@ func (s *StopwatchService) SendCommand(portName string, cmd string) error {
 	return err
 }
 
-func (s *StopwatchService) StartCapture(portName string, baudRate int, dataBits int, stopBits string, parity string) error {
+func (s *StopwatchService) StartCapture(portName string, baudRate int, dataBits int, stopBits string, parity string, includeTerminalStop bool) error {
 	s.mu.Lock()
 	if s.isCapturing {
 		s.mu.Unlock()
@@ -141,14 +156,18 @@ func (s *StopwatchService) StartCapture(portName string, baudRate int, dataBits 
 	s.capturedTimes = []models.ImportedTime{}
 	s.capturedSegments = map[int][]models.ImportedTime{}
 	s.captureBuffer = []byte{}
+	s.includeTerminalStop = includeTerminalStop
 	s.mu.Unlock()
 
-	// Some USB-serial adapters/devices require a short settle time after opening.
-	time.Sleep(150 * time.Millisecond)
+	// Some USB-serial adapters/devices require a longer settle and line reset.
+	_ = port.SetDTR(false)
+	_ = port.SetRTS(false)
+	time.Sleep(100 * time.Millisecond)
 	_ = port.SetDTR(true)
 	_ = port.SetRTS(true)
+	time.Sleep(stopwatchSettleDelay)
 
-	if _, err := port.Write([]byte{0x14, 0x14}); err != nil {
+	if err := s.sendUploadCommand(port, 1, "initial"); err != nil {
 		port.Close()
 		s.mu.Lock()
 		s.activePort = nil
@@ -158,6 +177,7 @@ func (s *StopwatchService) StartCapture(portName string, baudRate int, dataBits 
 	}
 
 	go s.serialReaderLoop()
+	go s.uploadRetryLoop()
 	return nil
 }
 
@@ -181,7 +201,11 @@ func (s *StopwatchService) StopCapture() []models.ImportedTime {
 	raw = append(raw, s.captureBuffer...)
 	s.mu.Unlock()
 
-	parsed, segments, meta := s.parseUpload(raw)
+	s.mu.Lock()
+	includeTerminalStop := s.includeTerminalStop
+	s.mu.Unlock()
+
+	parsed, segments, meta := s.parseUpload(raw, includeTerminalStop)
 
 	s.mu.Lock()
 	s.capturedTimes = parsed
@@ -243,6 +267,7 @@ func (s *StopwatchService) serialReaderLoop() {
 
 	buf := make([]byte, 1024)
 	totalBytes := 0
+	lastProgressAt := time.Now()
 
 	for {
 		select {
@@ -269,10 +294,12 @@ func (s *StopwatchService) serialReaderLoop() {
 				totalBytes += n
 				snapshot = append(snapshot, s.captureBuffer...)
 				s.mu.Unlock()
+				lastProgressAt = time.Now()
 
 				if s.app != nil {
 					s.app.Event.Emit("stopwatch:progress", map[string]interface{}{
 						"bytesRead": totalBytes,
+						"status":    "receiving stopwatch bytes",
 					})
 				}
 
@@ -280,13 +307,74 @@ func (s *StopwatchService) serialReaderLoop() {
 					s.finalizeCapture(snapshot)
 					return
 				}
+			} else if s.app != nil && time.Since(lastProgressAt) >= 2*time.Second {
+				lastProgressAt = time.Now()
+				s.app.Event.Emit("stopwatch:progress", map[string]interface{}{
+					"bytesRead": totalBytes,
+					"status":    "waiting for stopwatch response",
+				})
 			}
 		}
 	}
 }
 
+func (s *StopwatchService) uploadRetryLoop() {
+	ticker := time.NewTicker(stopwatchRetryInterval)
+	defer ticker.Stop()
+
+	for attempt := 2; attempt <= stopwatchMaxRetries; attempt++ {
+		select {
+		case <-ticker.C:
+		case <-s.stopSignal:
+			return
+		}
+
+		s.mu.Lock()
+		port := s.activePort
+		captured := len(s.captureBuffer)
+		capturing := s.isCapturing
+		s.mu.Unlock()
+
+		if !capturing || port == nil || captured > 0 {
+			return
+		}
+
+		if err := s.sendUploadCommand(port, attempt, "retry"); err != nil {
+			if s.app != nil {
+				s.app.Event.Emit("stopwatch:error", fmt.Sprintf("retry %d upload command failed: %v", attempt, err))
+			}
+			return
+		}
+	}
+}
+
+func (s *StopwatchService) sendUploadCommand(port serial.Port, attempt int, phase string) error {
+	if s.app != nil {
+		s.app.Event.Emit("stopwatch:progress", map[string]interface{}{
+			"bytesRead": 0,
+			"status":    fmt.Sprintf("sending stopwatch upload command (%s attempt %d/%d)", phase, attempt, stopwatchMaxRetries),
+		})
+	}
+	if _, err := port.Write(stopwatchUploadCommand); err != nil {
+		return err
+	}
+	if s.app != nil {
+		s.app.Event.Emit("stopwatch:command-sent", map[string]interface{}{
+			"bytes":   len(stopwatchUploadCommand),
+			"hex":     fmt.Sprintf("% x", stopwatchUploadCommand),
+			"attempt": attempt,
+			"phase":   phase,
+		})
+	}
+	return nil
+}
+
 func (s *StopwatchService) finalizeCapture(raw []byte) {
-	parsed, segments, meta := s.parseUpload(raw)
+	s.mu.Lock()
+	includeTerminalStop := s.includeTerminalStop
+	s.mu.Unlock()
+
+	parsed, segments, meta := s.parseUpload(raw, includeTerminalStop)
 	meta["autoComplete"] = true
 
 	s.mu.Lock()
@@ -311,14 +399,19 @@ func (s *StopwatchService) finalizeCapture(raw []byte) {
 }
 
 func (s *StopwatchService) parseUploadedTimes(raw []byte) ([]models.ImportedTime, map[string]interface{}) {
-	selected, _, meta := s.parseUpload(raw)
+	selected, _, meta := s.parseUpload(raw, true)
 	return selected, meta
 }
 
-func (s *StopwatchService) parseUpload(raw []byte) ([]models.ImportedTime, map[int][]models.ImportedTime, map[string]interface{}) {
+func (s *StopwatchService) ParseUploadedRaw(raw []byte) ([]models.ImportedTime, map[int][]models.ImportedTime, map[string]interface{}) {
+	return s.parseUpload(raw, true)
+}
+
+func (s *StopwatchService) parseUpload(raw []byte, includeTerminalStop bool) ([]models.ImportedTime, map[int][]models.ImportedTime, map[string]interface{}) {
 	meta := map[string]interface{}{
-		"bytesRead":     len(raw),
-		"firstBytesHex": previewHex(raw, 64),
+		"bytesRead":           len(raw),
+		"firstBytesHex":       previewHex(raw, 64),
+		"includeTerminalStop": includeTerminalStop,
 	}
 
 	if len(raw) == 0 {
@@ -326,14 +419,26 @@ func (s *StopwatchService) parseUpload(raw []byte) ([]models.ImportedTime, map[i
 		return []models.ImportedTime{}, map[int][]models.ImportedTime{}, meta
 	}
 
-	padStart := findPaddingStart(raw)
+	candidateMarkers := findSegmentMarkers(raw, len(raw))
+	padStart := -1
+	if len(candidateMarkers) > 0 {
+		padStart = findPaddingStartAfter(raw, candidateMarkers[0]+8)
+	}
+	if padStart <= 0 {
+		padStart = findPaddingStart(raw)
+	}
 	if padStart <= 0 {
 		meta["error"] = "unable to locate payload padding"
 		return []models.ImportedTime{}, map[int][]models.ImportedTime{}, meta
 	}
+	meta["paddingOffset"] = padStart
 
 	markers := findSegmentMarkers(raw, padStart)
 	meta["markerCount"] = len(markers)
+	if len(markers) > 0 {
+		meta["firstMarkerOffset"] = markers[0]
+		meta["lastMarkerOffset"] = markers[len(markers)-1]
+	}
 
 	footer := readFooter(raw, padStart)
 	footerFields := parseFooter(footer)
@@ -374,6 +479,7 @@ func (s *StopwatchService) parseUpload(raw []byte) ([]models.ImportedTime, map[i
 	for i, block := range activeBlocks {
 		records := parseBlockRecords(raw, block.start, block.end)
 		times := extractTimelineTimes(records)
+		times, trimmedAtReset := trimTimelineAtReset(times)
 
 		segIndex := i + 1
 		if segIndex == footerFields.selectedSegment {
@@ -383,7 +489,7 @@ func (s *StopwatchService) parseUpload(raw []byte) ([]models.ImportedTime, map[i
 			}
 		}
 
-		times = sanitizeSegmentTimeline(times, footerFields.stopCentiseconds, i == len(activeBlocks)-1)
+		times = sanitizeSegmentTimeline(times, footerFields.stopCentiseconds, i == len(activeBlocks)-1, includeTerminalStop, trimmedAtReset)
 		segments[segIndex] = toImportedTimes(times)
 		segmentLapCounts = append(segmentLapCounts, len(times))
 
@@ -417,9 +523,24 @@ type rawRecord struct {
 	centiseconds int
 }
 
+func (r rawRecord) fullCentiseconds() int {
+	if r.setID < 0 {
+		return r.centiseconds
+	}
+	return (r.setID << 16) + r.centiseconds
+}
+
 func findPaddingStart(raw []byte) int {
+	return findPaddingStartAfter(raw, 0)
+}
+
+func findPaddingStartAfter(raw []byte, start int) int {
+	if start < 0 {
+		start = 0
+	}
 	run := 0
-	for i, b := range raw {
+	for i := start; i < len(raw); i++ {
+		b := raw[i]
 		if b == 0x55 {
 			run++
 			if run >= 64 {
@@ -435,7 +556,7 @@ func findPaddingStart(raw []byte) int {
 func findSegmentMarkers(raw []byte, padStart int) []int {
 	markers := []int{}
 	for i := 0; i+7 < padStart; i++ {
-		if raw[i] == 0xff && raw[i+1] == 0x20 && raw[i+2] == 0x11 && raw[i+3] == 0x01 && raw[i+4] == 0x20 {
+		if raw[i] == 0xff && raw[i+1] == 0x20 && raw[i+2] == 0x11 {
 			markers = append(markers, i)
 		}
 	}
@@ -477,16 +598,14 @@ func extractTimelineTimes(records []rawRecord) []int {
 		if rec.setID == 0xff20 || rec.setID == 0x7f20 || rec.setID == 0x1383 || rec.setID == 0x1303 || rec.setID == 0x1392 {
 			continue
 		}
-		// Uploaded segment timeline entries are emitted with set id 0.
-		if rec.setID != 0 {
-			continue
-		}
-		times = append(times, rec.centiseconds)
+		// On short captures the high word stays at 0. On longer captures the
+		// watch increments setID as the high 16 bits of the cumulative time.
+		times = append(times, rec.fullCentiseconds())
 	}
 	return times
 }
 
-func sanitizeSegmentTimeline(times []int, stopCentiseconds int, isLastSegment bool) []int {
+func sanitizeSegmentTimeline(times []int, stopCentiseconds int, isLastSegment bool, includeTerminalStop bool, trimmedAtReset bool) []int {
 	if len(times) == 0 {
 		return times
 	}
@@ -504,13 +623,37 @@ func sanitizeSegmentTimeline(times []int, stopCentiseconds int, isLastSegment bo
 		return times[:len(times)-1]
 	}
 
+	if !includeTerminalStop && trimmedAtReset && len(times) > 0 {
+		return times[:len(times)-1]
+	}
+
 	// For the final segment, keep the terminal split by default.
 	// Only trim when there is an obvious duplicate terminal control marker.
+	hadDuplicateTerminal := false
 	if stopCentiseconds > 0 && len(times) >= 2 && times[len(times)-1] == stopCentiseconds && times[len(times)-2] == stopCentiseconds {
 		times = times[:len(times)-1]
+		hadDuplicateTerminal = true
+	}
+
+	if !includeTerminalStop && !hadDuplicateTerminal && stopCentiseconds > 0 && len(times) > 0 && times[len(times)-1] == stopCentiseconds {
+		return times[:len(times)-1]
 	}
 
 	return times
+}
+
+func trimTimelineAtReset(times []int) ([]int, bool) {
+	if len(times) < 2 {
+		return times, false
+	}
+
+	for i := 1; i < len(times); i++ {
+		if times[i] <= times[i-1] {
+			return times[:i], true
+		}
+	}
+
+	return times, false
 }
 
 func toImportedTimes(times []int) []models.ImportedTime {
@@ -548,9 +691,10 @@ func parseFooter(footer []byte) footerFields {
 	if len(footer) >= 8 {
 		fields.selectedSegmentRecords = int(footer[6])<<8 | int(footer[7])
 	}
-	// Stop time appears as 00 XX XX 00; centiseconds are the middle bytes.
-	if len(footer) >= 11 {
-		fields.stopCentiseconds = int(footer[9])<<8 | int(footer[10])
+	// Stop time appears as HH XX XX 00 where HH is the high-byte extension
+	// for long runs. Short runs simply use HH=0.
+	if len(footer) >= 12 {
+		fields.stopCentiseconds = int(footer[8])<<16 | int(footer[9])<<8 | int(footer[10])
 	}
 
 	return fields
@@ -575,6 +719,10 @@ func isUploadComplete(raw []byte) bool {
 	footer := readFooter(raw, padStart)
 	// Observed footer size is 36 bytes in all known captures.
 	return len(footer) >= 36
+}
+
+func (s *StopwatchService) IsUploadCompleteRaw(raw []byte) bool {
+	return isUploadComplete(raw)
 }
 
 func parseCommandPayload(cmd string) ([]byte, error) {
@@ -612,6 +760,267 @@ func previewHex(raw []byte, max int) string {
 		max = len(raw)
 	}
 	return fmt.Sprintf("% x", raw[:max])
+}
+
+type watchwareRow struct {
+	segment       int
+	memSlot       int
+	cumTimeCS     int
+	cumTimeRaw    string
+	sourceLineNum int
+}
+
+func (s *StopwatchService) LoadWatchwareExport(filePath string, includeTerminalStop bool) ([]models.ImportedTime, error) {
+	content, err := os.ReadFile(filePath)
+	if err != nil {
+		return nil, err
+	}
+
+	selected, segments, meta, err := parseWatchwareExport(string(content), includeTerminalStop)
+	if err != nil {
+		return nil, err
+	}
+	meta["source"] = "watchware-export"
+	meta["filePath"] = filePath
+	meta["includeTerminalStop"] = includeTerminalStop
+
+	s.mu.Lock()
+	s.capturedTimes = append([]models.ImportedTime(nil), selected...)
+	s.capturedSegments = make(map[int][]models.ImportedTime, len(segments))
+	for segment, times := range segments {
+		s.capturedSegments[segment] = append([]models.ImportedTime(nil), times...)
+	}
+	s.captureBuffer = nil
+	s.isCapturing = false
+	s.mu.Unlock()
+
+	if s.app != nil {
+		s.app.Event.Emit("stopwatch:summary", meta)
+	}
+
+	return append([]models.ImportedTime(nil), selected...), nil
+}
+
+func parseWatchwareExport(content string, includeTerminalStop bool) ([]models.ImportedTime, map[int][]models.ImportedTime, map[string]interface{}, error) {
+	meta := map[string]interface{}{
+		"source":              "watchware-export",
+		"includeTerminalStop": includeTerminalStop,
+	}
+
+	reader := csv.NewReader(strings.NewReader(content))
+	reader.Comma = '\t'
+	reader.FieldsPerRecord = -1
+	reader.TrimLeadingSpace = false
+
+	header, err := reader.Read()
+	if err != nil {
+		if err == io.EOF {
+			return nil, nil, meta, fmt.Errorf("watchware export is empty")
+		}
+		return nil, nil, meta, err
+	}
+
+	indexes := map[string]int{}
+	for i, name := range header {
+		indexes[strings.TrimSpace(name)] = i
+	}
+
+	segmentIdx, ok := indexes["Segment"]
+	if !ok {
+		return nil, nil, meta, fmt.Errorf("watchware export missing Segment column")
+	}
+	memIdx, ok := indexes["Mem"]
+	if !ok {
+		return nil, nil, meta, fmt.Errorf("watchware export missing Mem column")
+	}
+	cumIdx, ok := indexes["Cum Time"]
+	if !ok {
+		return nil, nil, meta, fmt.Errorf("watchware export missing Cum Time column")
+	}
+
+	rowsBySegment := map[int][]watchwareRow{}
+	totalRows := 0
+	lineNum := 1
+
+	for {
+		lineNum++
+		record, err := reader.Read()
+		if err == io.EOF {
+			break
+		}
+		if err != nil {
+			return nil, nil, meta, err
+		}
+
+		if segmentIdx >= len(record) || memIdx >= len(record) || cumIdx >= len(record) {
+			continue
+		}
+
+		segmentText := strings.TrimSpace(record[segmentIdx])
+		memText := strings.TrimSpace(record[memIdx])
+		cumText := strings.TrimSpace(record[cumIdx])
+		if segmentText == "" || memText == "" || cumText == "" {
+			continue
+		}
+
+		segment, err := strconv.Atoi(segmentText)
+		if err != nil {
+			continue
+		}
+
+		memSlot, err := parseWatchwareMemSlot(memText)
+		if err != nil {
+			continue
+		}
+
+		cumTimeCS, err := parseWatchwareCumTime(cumText)
+		if err != nil {
+			return nil, nil, meta, fmt.Errorf("line %d: invalid Cum Time %q: %w", lineNum, cumText, err)
+		}
+
+		rowsBySegment[segment] = append(rowsBySegment[segment], watchwareRow{
+			segment:       segment,
+			memSlot:       memSlot,
+			cumTimeCS:     cumTimeCS,
+			cumTimeRaw:    cumText,
+			sourceLineNum: lineNum,
+		})
+		totalRows++
+	}
+
+	if len(rowsBySegment) == 0 {
+		return nil, nil, meta, fmt.Errorf("watchware export did not contain any timing rows")
+	}
+
+	segmentIDs := make([]int, 0, len(rowsBySegment))
+	for segmentID := range rowsBySegment {
+		segmentIDs = append(segmentIDs, segmentID)
+	}
+	sort.Ints(segmentIDs)
+
+	segments := make(map[int][]models.ImportedTime, len(segmentIDs))
+	segmentLapCounts := make([]int, 0, len(segmentIDs))
+
+	trimmedStopSegments := []int{}
+	for _, segmentID := range segmentIDs {
+		timeline, trimmedStop := normalizeWatchwareRows(rowsBySegment[segmentID], includeTerminalStop)
+		if trimmedStop {
+			trimmedStopSegments = append(trimmedStopSegments, segmentID)
+		}
+		imported := toImportedTimes(timeline)
+		segments[segmentID] = imported
+		segmentLapCounts = append(segmentLapCounts, len(imported))
+	}
+
+	selectedSegment := segmentIDs[0]
+	selected := segments[selectedSegment]
+
+	meta["recordsRead"] = totalRows
+	meta["recordsParsed"] = len(selected)
+	meta["segmentCount"] = len(segmentIDs)
+	meta["selectedSegment"] = selectedSegment
+	meta["segmentLapCounts"] = segmentLapCounts
+	meta["selectedSegmentRecords"] = len(selected)
+	meta["trimmedStopSegments"] = trimmedStopSegments
+
+	return selected, segments, meta, nil
+}
+
+func parseWatchwareMemSlot(value string) (int, error) {
+	text := strings.TrimSpace(strings.TrimPrefix(strings.ToUpper(value), "T"))
+	if text == "" {
+		return 0, fmt.Errorf("empty memory slot")
+	}
+	return strconv.Atoi(text)
+}
+
+func parseWatchwareCumTime(value string) (int, error) {
+	seconds, err := strconv.ParseFloat(strings.TrimSpace(value), 64)
+	if err != nil {
+		return 0, err
+	}
+	return int(math.Round(seconds * 100)), nil
+}
+
+func normalizeWatchwareRows(rows []watchwareRow, includeTerminalStop bool) ([]int, bool) {
+	if len(rows) == 0 {
+		return nil, false
+	}
+
+	ordered := append([]watchwareRow(nil), rows...)
+	startIndex := 0
+	for i, row := range ordered {
+		if row.memSlot == 0 {
+			startIndex = i
+			break
+		}
+	}
+	if startIndex > 0 {
+		ordered = append(ordered[startIndex:], ordered[:startIndex]...)
+	} else if ordered[0].memSlot != 0 {
+		sort.SliceStable(ordered, func(i, j int) bool {
+			return ordered[i].memSlot < ordered[j].memSlot
+		})
+	}
+
+	trimmedStop := false
+	if !includeTerminalStop && shouldTrimWatchwareTerminalStop(ordered) {
+		ordered = ordered[:len(ordered)-1]
+		trimmedStop = true
+	}
+
+	timeline := make([]int, 0, len(ordered))
+	for _, row := range ordered {
+		timeline = append(timeline, row.cumTimeCS)
+	}
+
+	if len(timeline) > 0 && timeline[0] == 0 {
+		timeline = timeline[1:]
+	}
+	for len(timeline) >= 2 && timeline[len(timeline)-1] == timeline[len(timeline)-2] {
+		timeline = timeline[:len(timeline)-1]
+	}
+
+	return timeline, trimmedStop
+}
+
+func shouldTrimWatchwareTerminalStop(rows []watchwareRow) bool {
+	if len(rows) < 4 {
+		return false
+	}
+	if rows[0].memSlot != 0 {
+		return false
+	}
+
+	for i := 1; i < len(rows); i++ {
+		if rows[i].memSlot != rows[i-1].memSlot+1 {
+			return false
+		}
+	}
+
+	lastGap := rows[len(rows)-1].cumTimeCS - rows[len(rows)-2].cumTimeCS
+	if lastGap <= 0 {
+		return false
+	}
+
+	recentGaps := make([]int, 0, len(rows)-2)
+	for i := 2; i < len(rows)-1; i++ {
+		gap := rows[i].cumTimeCS - rows[i-1].cumTimeCS
+		if gap > 0 {
+			recentGaps = append(recentGaps, gap)
+		}
+	}
+	if len(recentGaps) == 0 {
+		return false
+	}
+
+	sort.Ints(recentGaps)
+	medianGap := recentGaps[len(recentGaps)/2]
+
+	// Watchware exports do not explicitly flag the terminal stop row.
+	// Treat the last record as a stop marker only when it is a clear outlier
+	// compared with the normal finisher-to-finisher gaps in the same segment.
+	return lastGap >= 6000 && lastGap >= medianGap*10
 }
 
 func (s *StopwatchService) CommitToRace(raceID int, times []models.ImportedTime) (int, error) {

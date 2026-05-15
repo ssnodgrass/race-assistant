@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { Events } from "@wailsio/runtime";
 import { StopwatchService } from '../../bindings/github.com/ssnodgrass/race-assistant/services';
+import { DatabaseService } from '../../bindings/github.com/ssnodgrass/race-assistant';
 import { ImportedTime, Event as RaceEvent, SegmentEventSelection } from '../../bindings/github.com/ssnodgrass/race-assistant/models';
 
 interface StopwatchImportProps {
@@ -22,6 +23,7 @@ export const StopwatchImport: React.FC<StopwatchImportProps> = ({ raceID, events
   const [bytesRead, setBytesRead] = useState(0);
   const [selectedEventID, setSelectedEventID] = useState<number>(events[0]?.id || 0);
   const [replaceExisting, setReplaceExisting] = useState(true);
+  const [includeTerminalStop, setIncludeTerminalStop] = useState(false);
   const [segmentCount, setSegmentCount] = useState(1);
   const [segmentLapCounts, setSegmentLapCounts] = useState<number[]>([]);
   const [segmentEventMap, setSegmentEventMap] = useState<Record<number, number>>({});
@@ -44,8 +46,17 @@ export const StopwatchImport: React.FC<StopwatchImportProps> = ({ raceID, events
     });
 
     const unsubProgress = Events.On('stopwatch:progress', (e) => {
-        const payload = e.data as { bytesRead?: number };
+        const payload = e.data as { bytesRead?: number; status?: string };
         setBytesRead(payload?.bytesRead || 0);
+        if (payload?.status) {
+            const statusLine = payload.status;
+            setRawLog(prev => {
+                if (prev[prev.length - 1] === statusLine) {
+                    return prev;
+                }
+                return [...prev, statusLine].slice(-20);
+            });
+        }
     });
 
     const unsubSummary = Events.On('stopwatch:summary', (e) => {
@@ -106,6 +117,23 @@ export const StopwatchImport: React.FC<StopwatchImportProps> = ({ raceID, events
 
   const refreshPorts = () => StopwatchService.ListPorts().then(setPorts).catch(console.error);
 
+  const loadWatchwareExport = async () => {
+    const filePath = await DatabaseService.GetFilePath("Select Watchware NkDataExport.txt");
+    if (!filePath) return;
+
+    setCaptured([]);
+    setRawLog([`Loading Watchware export: ${filePath}`]);
+    setBytesRead(0);
+    setSegmentCount(1);
+    setSegmentLapCounts([]);
+
+    StopwatchService.LoadWatchwareExport(filePath, includeTerminalStop).then(data => {
+      setCaptured(data || []);
+      setIsCapturing(false);
+      setStatus("Reviewing");
+    }).catch(err => alert("Watchware import failed: " + err));
+  };
+
   const toggleCapture = () => {
     if (isCapturing) {
         StopwatchService.StopCapture().then(data => {
@@ -120,7 +148,7 @@ export const StopwatchImport: React.FC<StopwatchImportProps> = ({ raceID, events
         setBytesRead(0);
         setSegmentCount(1);
         setSegmentLapCounts([]);
-        StopwatchService.StartCapture(selectedPort, baudRate, dataBits, stopBits, parity).then(() => {
+        StopwatchService.StartCapture(selectedPort, baudRate, dataBits, stopBits, parity, includeTerminalStop).then(() => {
             setIsCapturing(true);
             setStatus("Listening...");
         }).catch(err => alert(err));
@@ -246,6 +274,22 @@ export const StopwatchImport: React.FC<StopwatchImportProps> = ({ raceID, events
             >
                 {isCapturing ? '🛑 Stop Download' : '⬇️ Download From Stopwatch'}
             </button>
+            <button
+                onClick={loadWatchwareExport}
+                style={{ width: '100%', padding: '12px', marginTop: '10px', backgroundColor: '#444' }}
+                disabled={isCapturing}
+            >
+                📄 Load Watchware Export
+            </button>
+            <label style={{ display: 'flex', alignItems: 'center', gap: '8px', marginTop: '10px', fontSize: '0.9em' }}>
+                <input
+                    type="checkbox"
+                    checked={includeTerminalStop}
+                    onChange={e => setIncludeTerminalStop(e.target.checked)}
+                    disabled={isCapturing}
+                />
+                Include terminal stop time as a placement
+            </label>
         </div>
 
       </div>
