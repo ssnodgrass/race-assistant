@@ -1,17 +1,13 @@
 package services
 
 import (
-	"os"
+	"fmt"
+	"strings"
 	"testing"
 )
 
 func TestParseWatchwareExport_ReordersWrappedMemorySlots(t *testing.T) {
-	content, err := os.ReadFile("../NkDataExport20260515.txt")
-	if err != nil {
-		t.Fatalf("failed to read sample export: %v", err)
-	}
-
-	selected, segments, meta, err := parseWatchwareExport(string(content), false)
+	selected, segments, meta, err := parseWatchwareExport(buildWrappedWatchwareExportFixture(), false)
 	if err != nil {
 		t.Fatalf("parseWatchwareExport failed: %v", err)
 	}
@@ -59,12 +55,7 @@ func TestParseWatchwareExport_ReordersWrappedMemorySlots(t *testing.T) {
 }
 
 func TestParseWatchwareExport_CanIncludeTerminalStop(t *testing.T) {
-	content, err := os.ReadFile("../NkDataExport20260515.txt")
-	if err != nil {
-		t.Fatalf("failed to read sample export: %v", err)
-	}
-
-	selected, segments, meta, err := parseWatchwareExport(string(content), true)
+	selected, segments, meta, err := parseWatchwareExport(buildWrappedWatchwareExportFixture(), true)
 	if err != nil {
 		t.Fatalf("parseWatchwareExport failed: %v", err)
 	}
@@ -92,4 +83,36 @@ func TestParseWatchwareExport_CanIncludeTerminalStop(t *testing.T) {
 	if len(trimmed) != 0 {
 		t.Fatalf("trimmedStopSegments mismatch: got %v want []", trimmed)
 	}
+}
+
+func buildWrappedWatchwareExportFixture() string {
+	times := make([]int, 80)
+	for i := range times {
+		times[i] = i * 100
+	}
+
+	// Preserve the validated values we care about from the real export behavior.
+	times[1] = 108946
+	for i := 2; i < 27; i++ {
+		times[i] = times[i-1] + 100
+	}
+	times[27] = 171179
+	for i := 28; i < 79; i++ {
+		times[i] = times[i-1] + 100
+	}
+	times[78] = 340502
+	times[79] = 467773
+
+	var b strings.Builder
+	b.WriteString("Segment\tMem\tCum Time\n")
+
+	// Emit wrapped memory slots to match the watch export pattern.
+	for mem := 28; mem <= 79; mem++ {
+		fmt.Fprintf(&b, "1\tT%03d\t%.2f\n", mem, float64(times[mem])/100)
+	}
+	for mem := 0; mem <= 27; mem++ {
+		fmt.Fprintf(&b, "1\tT%03d\t%.2f\n", mem, float64(times[mem])/100)
+	}
+
+	return b.String()
 }
