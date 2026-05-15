@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { ParticipantService, RunSignUpService, RaceService } from '../../bindings/github.com/ssnodgrass/race-assistant/services';
 import { Participant, Event as RaceEvent, RSUEvent } from '../../bindings/github.com/ssnodgrass/race-assistant/models';
 import { isBrowserPreview } from '../utils/runtime';
@@ -14,6 +14,9 @@ interface ParticipantManagementProps {
 type SortKey = 'bib' | 'name' | 'gender' | 'age' | 'event' | 'checked';
 
 export const ParticipantManagement: React.FC<ParticipantManagementProps> = ({ raceID, events, participants, onRefresh, onImport }) => {
+  const makeEmptyForm = (eventID: number) => ({
+    bib: '', first: '', last: '', gender: '', age: '', dob: '', eventID, checked: false
+  });
   const [isAdding, setIsAdding] = useState(false);
   const [showRSUImport, setShowRSUImport] = useState(false);
   const [editingID, setEditingID] = useState<number | null>(null);
@@ -21,9 +24,8 @@ export const ParticipantManagement: React.FC<ParticipantManagementProps> = ({ ra
   const [isDeletingAll, setIsDeletingAll] = useState(false);
   const [isClearingBibs, setIsClearingBibs] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
-  const [form, setForm] = useState({
-    bib: '', first: '', last: '', gender: 'M', age: '30', dob: '', eventID: events[0]?.id || 0, checked: false
-  });
+  const [form, setForm] = useState(makeEmptyForm(events[0]?.id || 0));
+  const firstNameInputRef = useRef<HTMLInputElement | null>(null);
 
   // Sorting State
   const [sortKey, setSortKey] = useState<SortKey>('bib');
@@ -41,6 +43,18 @@ export const ParticipantManagement: React.FC<ParticipantManagementProps> = ({ ra
   useEffect(() => {
     if (showRSUImport) loadRSUInfo();
   }, [showRSUImport]);
+
+  useEffect(() => {
+    if (isAdding) {
+      firstNameInputRef.current?.focus();
+    }
+  }, [isAdding, editingID]);
+
+  useEffect(() => {
+    if (events.length > 0 && !events.some(ev => ev.id === Number(form.eventID))) {
+      setForm(prev => ({ ...prev, eventID: events[0].id }));
+    }
+  }, [events, form.eventID]);
 
   const loadRSUInfo = async () => {
     try {
@@ -170,6 +184,14 @@ export const ParticipantManagement: React.FC<ParticipantManagementProps> = ({ ra
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
+    if (!form.gender) {
+      alert("Select a gender before saving.");
+      return;
+    }
+    if (!form.age.trim()) {
+      alert("Enter an age before saving.");
+      return;
+    }
     const p = new Participant({
       id: editingID || 0, race_id: raceID, event_id: Number(form.eventID),
       bib_number: form.bib, first_name: form.first, last_name: form.last,
@@ -177,7 +199,16 @@ export const ParticipantManagement: React.FC<ParticipantManagementProps> = ({ ra
       dob: form.dob ? new Date(form.dob).toISOString() : null, checked_in: form.checked
     });
     const action = editingID ? ParticipantService.UpdateParticipant(p) : ParticipantService.AddParticipant(p);
-    action.then(() => { setIsAdding(false); setEditingID(null); onRefresh(); }).catch(console.error);
+    action.then(() => {
+      if (editingID) {
+        setIsAdding(false);
+        setEditingID(null);
+      } else {
+        setForm(makeEmptyForm(events[0]?.id || Number(form.eventID) || 0));
+        requestAnimationFrame(() => firstNameInputRef.current?.focus());
+      }
+      onRefresh();
+    }).catch(console.error);
   };
 
   const filteredParticipants = participants.filter(p => {
@@ -204,12 +235,22 @@ export const ParticipantManagement: React.FC<ParticipantManagementProps> = ({ ra
       <div className="flex-between" style={{ marginBottom: 'var(--space-lg)' }}>
         <h2>Participants <span className="text-dim" style={{ fontSize: '0.6em', fontWeight: 400 }}>({participants.length} total)</span></h2>
         <div className="flex-row">
-            <button onClick={() => { setIsAdding(!isAdding); setShowRSUImport(false); }}>
+            <button onClick={() => {
+                if (isAdding) {
+                    setIsAdding(false);
+                    setEditingID(null);
+                } else {
+                    setForm(makeEmptyForm(events[0]?.id || 0));
+                    setEditingID(null);
+                    setIsAdding(true);
+                    setShowRSUImport(false);
+                }
+            }}>
                 {isAdding ? 'Cancel' : '+ Add Participant'}
             </button>
             <button onClick={onImport} style={{ backgroundColor: '#444' }}>CSV Import</button>
             {!isBrowser && (
-                <button onClick={() => { setShowRSUImport(!showRSUImport); setIsAdding(false); }} style={{ backgroundColor: 'var(--accent)' }}>RSU Import</button>
+            <button onClick={() => { setShowRSUImport(!showRSUImport); setIsAdding(false); setEditingID(null); }} style={{ backgroundColor: 'var(--accent)' }}>RSU Import</button>
             )}
             <button onClick={() => {
                 const start = window.prompt("Start bib sequence at:", "100");
@@ -306,7 +347,7 @@ export const ParticipantManagement: React.FC<ParticipantManagementProps> = ({ ra
             </div>
             <div className="flex-row" style={{ flexDirection: 'column', alignItems: 'stretch' }}>
                 <label style={{ display: 'block', marginBottom: '8px', fontWeight: 600, fontSize: '0.85em', color: 'var(--text-dim)' }}>FIRST NAME</label>
-                <input value={form.first} onChange={e => setForm({...form, first: e.target.value})} required />
+                <input ref={firstNameInputRef} value={form.first} onChange={e => setForm({...form, first: e.target.value})} required />
             </div>
             <div className="flex-row" style={{ flexDirection: 'column', alignItems: 'stretch' }}>
                 <label style={{ display: 'block', marginBottom: '8px', fontWeight: 600, fontSize: '0.85em', color: 'var(--text-dim)' }}>LAST NAME</label>
@@ -314,13 +355,16 @@ export const ParticipantManagement: React.FC<ParticipantManagementProps> = ({ ra
             </div>
             <div className="flex-row" style={{ flexDirection: 'column', alignItems: 'stretch' }}>
                 <label style={{ display: 'block', marginBottom: '8px', fontWeight: 600, fontSize: '0.85em', color: 'var(--text-dim)' }}>GENDER</label>
-                <select value={form.gender} onChange={e => setForm({...form, gender: e.target.value})}>
-                    <option value="M">Male</option><option value="F">Female</option><option value="O">Other</option>
+                <select value={form.gender} onChange={e => setForm({...form, gender: e.target.value})} required>
+                    <option value="">-- Select --</option>
+                    <option value="M">Male</option>
+                    <option value="F">Female</option>
+                    <option value="O">Other</option>
                 </select>
             </div>
             <div className="flex-row" style={{ flexDirection: 'column', alignItems: 'stretch' }}>
                 <label style={{ display: 'block', marginBottom: '8px', fontWeight: 600, fontSize: '0.85em', color: 'var(--text-dim)' }}>AGE</label>
-                <input type="number" value={form.age} onChange={e => setForm({...form, age: e.target.value})} required />
+                <input type="number" value={form.age} onChange={e => setForm({...form, age: e.target.value})} placeholder="Required" required min={0} />
             </div>
             <div style={{ alignSelf: 'center', paddingTop: '20px' }}>
                 <label style={{ display: 'flex', alignItems: 'center', gap: '10px', cursor: 'pointer' }}>

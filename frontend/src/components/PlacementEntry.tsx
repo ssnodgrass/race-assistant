@@ -104,6 +104,26 @@ export const PlacementEntry: React.FC<PlacementEntryProps> = ({ race, participan
 
   const handleAssign = async (p: number, b: string, skipConfirm = false) => {
     if (!b || !p) return;
+    const existingPlacement = placements.find(pl => pl.place === p);
+    if (!skipConfirm && existingPlacement && existingPlacement.bib_number !== b) {
+      const existingParticipant = participants.find(reg => reg.bib_number === existingPlacement.bib_number);
+      const existingName = existingParticipant
+        ? `${existingParticipant.first_name} ${existingParticipant.last_name}`.trim()
+        : (existingPlacement.bib_number === "?" ? "Placeholder" : "Unknown Runner");
+      const replacementParticipant = participants.find(reg => reg.bib_number === b);
+      const replacementName = replacementParticipant
+        ? `${replacementParticipant.first_name} ${replacementParticipant.last_name}`.trim()
+        : (b === "?" ? "Placeholder" : "Unknown Runner");
+
+      const confirmed = window.confirm(
+        `Replace placement ${p}?\n\nCurrent: ${existingPlacement.bib_number} - ${existingName}\nNew: ${b} - ${replacementName}`
+      );
+      if (!confirmed) {
+        bibInputRef.current?.focus();
+        return;
+      }
+    }
+
     const unofficialTime = race.start_time ? elapsed : "";
     TimingService.AssignBibToPlaceWithTimeForEvent(race.id, selectedEventID, p, b, unofficialTime)
       .then(() => {
