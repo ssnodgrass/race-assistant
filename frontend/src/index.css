@@ -97,6 +97,12 @@ body, html, #root {
   flex-shrink: 0;
 }
 
+.app-version {
+  color: var(--text-dim);
+  font-size: 0.78rem;
+  margin-bottom: var(--space-sm);
+}
+
 .nav-item {
   padding: 12px 20px;
   cursor: pointer;

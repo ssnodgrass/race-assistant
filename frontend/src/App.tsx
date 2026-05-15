@@ -20,12 +20,14 @@ import { CSVImport } from './components/CSVImport';
 import { StopwatchImport } from './components/StopwatchImport';
 import { LiveResults } from './components/LiveResults';
 import { isBrowserPreview } from './utils/runtime';
+import packageJSON from '../package.json';
 
 import './index.css';
 
 type View = 'list' | 'race_detail' | 'create_race' | 'manage_events' | 'award_config' | 'participants' | 'placements' | 'times' | 'awards' | 'reporting' | 'import_csv' | 'stopwatch' | 'live_display';
 
 function App() {
+  const appVersion = packageJSON.version;
   const initialView = new URLSearchParams(window.location.search).get('view') as View | null;
   const [dbPath, setDbPath] = useState<string>('');
   const [view, setView] = useState<View>(initialView ?? 'list');
@@ -222,6 +224,7 @@ function App() {
             )}
         </nav>
         <div className="sidebar-footer">
+            <div className="app-version">Version {appVersion}</div>
             {dbPath && <button onClick={() => DatabaseService.Close()} style={{ width: '100%', backgroundColor: '#444' }}>Close Database</button>}
         </div>
       </aside>
