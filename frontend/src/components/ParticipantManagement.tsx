@@ -43,6 +43,7 @@ export const ParticipantManagement: React.FC<ParticipantManagementProps> = ({ ra
     verticalGapIn: '0',
   });
   const firstNameInputRef = useRef<HTMLInputElement | null>(null);
+  const bibInputRef = useRef<HTMLInputElement | null>(null);
 
   // Sorting State
   const [sortKey, setSortKey] = useState<SortKey>('bib');
@@ -73,8 +74,14 @@ export const ParticipantManagement: React.FC<ParticipantManagementProps> = ({ ra
   }, [showRSUImport]);
 
   useEffect(() => {
-    if (isAdding) {
+    if (isAdding && !editingID) {
       firstNameInputRef.current?.focus();
+    }
+    if (isAdding && editingID) {
+      requestAnimationFrame(() => {
+        bibInputRef.current?.focus();
+        bibInputRef.current?.select();
+      });
     }
   }, [isAdding, editingID]);
 
@@ -167,6 +174,8 @@ export const ParticipantManagement: React.FC<ParticipantManagementProps> = ({ ra
       bib: p.bib_number, first: p.first_name, last: p.last_name, gender: p.gender,
       age: p.age_on_race_day.toString(), dob: p.dob ? p.dob.split('T')[0] : '', eventID: p.event_id, checked: p.checked_in
     });
+    setShowRSUImport(false);
+    setShowLabelPrint(false);
     setIsAdding(true);
   };
 
@@ -256,6 +265,18 @@ export const ParticipantManagement: React.FC<ParticipantManagementProps> = ({ ra
     }
   };
 
+  const handleExportCheckInSheet = async () => {
+    const path = await DatabaseService.GetSavePathCSV("Check_In_Worksheet.csv");
+    if (!path) return;
+
+    try {
+      await ReportingService.GenerateCheckInWorksheetCSV(raceID, path);
+      alert("Check-in worksheet exported.");
+    } catch (e) {
+      alert("Failed to export check-in worksheet: " + e);
+    }
+  };
+
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     if (!form.gender) {
@@ -323,6 +344,9 @@ export const ParticipantManagement: React.FC<ParticipantManagementProps> = ({ ra
                 {isAdding ? 'Cancel' : '+ Add Participant'}
             </button>
             <button onClick={onImport} style={{ backgroundColor: '#444' }}>CSV Import</button>
+            {!isBrowser && (
+            <button onClick={handleExportCheckInSheet} style={{ backgroundColor: '#444' }}>Check-In Sheet</button>
+            )}
             {!isBrowser && (
             <button onClick={() => { setShowRSUImport(!showRSUImport); setIsAdding(false); setEditingID(null); }} style={{ backgroundColor: 'var(--accent)' }}>RSU Import</button>
             )}
@@ -493,7 +517,7 @@ export const ParticipantManagement: React.FC<ParticipantManagementProps> = ({ ra
           <form onSubmit={handleSubmit} style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: '20px' }}>
             <div className="flex-row" style={{ flexDirection: 'column', alignItems: 'stretch' }}>
                 <label style={{ display: 'block', marginBottom: '8px', fontWeight: 600, fontSize: '0.85em', color: 'var(--text-dim)' }}>BIB #</label>
-                <input value={form.bib} onChange={e => setForm({...form, bib: e.target.value})} placeholder="Optional until check-in" />
+                <input ref={bibInputRef} value={form.bib} onChange={e => setForm({...form, bib: e.target.value})} placeholder="Optional until check-in" />
             </div>
             <div className="flex-row" style={{ flexDirection: 'column', alignItems: 'stretch' }}>
                 <label style={{ display: 'block', marginBottom: '8px', fontWeight: 600, fontSize: '0.85em', color: 'var(--text-dim)' }}>EVENT</label>
@@ -550,9 +574,9 @@ export const ParticipantManagement: React.FC<ParticipantManagementProps> = ({ ra
           </thead>
           <tbody>
             {sortedParticipants.map(p => (
-              <tr key={p.id} style={{ opacity: p.checked_in ? 1 : 0.5, backgroundColor: p.checked_in ? '#ffffff03' : 'transparent' }}>
+              <tr key={p.id} onClick={() => handleEdit(p)} style={{ opacity: p.checked_in ? 1 : 0.5, backgroundColor: p.checked_in ? '#ffffff03' : 'transparent', cursor: 'pointer' }}>
                 <td style={{ paddingLeft: 'var(--space-lg)' }}>
-                    <input type="checkbox" checked={p.checked_in} onChange={() => handleToggleCheckIn(p)} style={{ width: '20px', height: '20px', cursor: 'pointer' }} />
+                    <input type="checkbox" checked={p.checked_in} onClick={e => e.stopPropagation()} onChange={() => handleToggleCheckIn(p)} style={{ width: '20px', height: '20px', cursor: 'pointer' }} />
                 </td>
                 <td><strong style={{ color: p.checked_in ? 'var(--accent)' : 'inherit' }}>{p.bib_number || '---'}</strong></td>
                 <td>{p.first_name} {p.last_name}</td>
@@ -560,8 +584,8 @@ export const ParticipantManagement: React.FC<ParticipantManagementProps> = ({ ra
                 <td>{p.age_on_race_day}</td>
                 <td style={{ fontSize: '0.9em', color: 'var(--text-dim)' }}>{events.find(ev => ev.id === p.event_id)?.name}</td>
                 <td style={{ textAlign: 'right', paddingRight: 'var(--space-lg)' }}>
-                    <button onClick={() => handleEdit(p)} style={{ backgroundColor: 'transparent', color: 'var(--text-dim)', padding: '4px 8px' }}>Edit</button>
-                    <button onClick={() => handleDelete(p.id, `${p.first_name} ${p.last_name}`)} style={{ backgroundColor: 'transparent', color: 'var(--danger)', padding: '4px 8px' }}>Del</button>
+                    <button onClick={e => { e.stopPropagation(); handleEdit(p); }} style={{ backgroundColor: 'transparent', color: 'var(--text-dim)', padding: '4px 8px' }}>Edit</button>
+                    <button onClick={e => { e.stopPropagation(); handleDelete(p.id, `${p.first_name} ${p.last_name}`); }} style={{ backgroundColor: 'transparent', color: 'var(--danger)', padding: '4px 8px' }}>Del</button>
                 </td>
               </tr>
             ))}

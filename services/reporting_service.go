@@ -393,3 +393,70 @@ func (s *ReportingService) GenerateStandingsCSV(eventID int, outputPath string) 
 
 	return nil
 }
+
+func (s *ReportingService) GenerateCheckInWorksheetCSV(raceID int, outputPath string) error {
+	participants, err := s.participantRepo.ListByRace(raceID)
+	if err != nil {
+		return err
+	}
+
+	events, err := s.eventRepo.ListByRace(raceID)
+	if err != nil {
+		return err
+	}
+	eventNames := make(map[int]string, len(events))
+	for _, event := range events {
+		eventNames[event.ID] = event.Name
+	}
+
+	sort.SliceStable(participants, func(i, j int) bool {
+		leftEvent := eventNames[participants[i].EventID]
+		rightEvent := eventNames[participants[j].EventID]
+		if leftEvent != rightEvent {
+			return leftEvent < rightEvent
+		}
+		leftName := participants[i].LastName + participants[i].FirstName
+		rightName := participants[j].LastName + participants[j].FirstName
+		return leftName < rightName
+	})
+
+	file, err := os.Create(outputPath)
+	if err != nil {
+		return err
+	}
+	defer file.Close()
+
+	writer := csv.NewWriter(file)
+	defer writer.Flush()
+
+	writer.Write([]string{"Event", "Last Name", "First Name", "Assigned Bib", "Imported Bib", "Gender", "Age", "Shirt Size", "Checked In", "Notes"})
+	for _, participant := range participants {
+		importedBib := participant.BibNumber
+		assignedBib := ""
+		if importedBib != "" {
+			assignedBib = importedBib
+		}
+		checkedIn := ""
+		if participant.CheckedIn {
+			checkedIn = "Y"
+		}
+		writer.Write([]string{
+			eventNames[participant.EventID],
+			participant.LastName,
+			participant.FirstName,
+			assignedBib,
+			importedBib,
+			participant.Gender,
+			fmt.Sprintf("%d", participant.AgeOnRaceDay),
+			"",
+			checkedIn,
+			"",
+		})
+	}
+
+	for i := 0; i < 25; i++ {
+		writer.Write([]string{"Race Day Registration", "", "", "", "", "", "", "", "", ""})
+	}
+
+	return nil
+}
