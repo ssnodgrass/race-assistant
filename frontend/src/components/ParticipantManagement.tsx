@@ -15,10 +15,30 @@ interface ParticipantManagementProps {
 type SortKey = 'bib' | 'name' | 'gender' | 'age' | 'event' | 'checked';
 type LabelSource = 'participants' | 'range' | 'placeholder';
 type LabelSheet = 'avery5160_30' | 'avery5161_20';
+type ParticipantForm = {
+  bib: string;
+  first: string;
+  last: string;
+  gender: string;
+  age: string;
+  dob: string;
+  eventID: number;
+  checked: boolean;
+};
 
 export const ParticipantManagement: React.FC<ParticipantManagementProps> = ({ raceID, events, participants, onRefresh, onImport }) => {
-  const makeEmptyForm = (eventID: number) => ({
+  const makeEmptyForm = (eventID: number): ParticipantForm => ({
     bib: '', first: '', last: '', gender: '', age: '', dob: '', eventID, checked: false
+  });
+  const makeParticipantForm = (p: Participant): ParticipantForm => ({
+    bib: p.bib_number,
+    first: p.first_name,
+    last: p.last_name,
+    gender: p.gender,
+    age: p.age_on_race_day.toString(),
+    dob: p.dob ? p.dob.split('T')[0] : '',
+    eventID: p.event_id,
+    checked: p.checked_in,
   });
   const [isAdding, setIsAdding] = useState(false);
   const [showRSUImport, setShowRSUImport] = useState(false);
@@ -31,6 +51,7 @@ export const ParticipantManagement: React.FC<ParticipantManagementProps> = ({ ra
   const [lastLabelPDFPath, setLastLabelPDFPath] = useState('');
   const [searchQuery, setSearchQuery] = useState('');
   const [form, setForm] = useState(makeEmptyForm(events[0]?.id || 0));
+  const [originalForm, setOriginalForm] = useState<ParticipantForm | null>(null);
   const [labelOptions, setLabelOptions] = useState({
     sheet: 'avery5160_30' as LabelSheet,
     source: 'participants' as LabelSource,
@@ -57,6 +78,44 @@ export const ParticipantManagement: React.FC<ParticipantManagementProps> = ({ ra
   const [replaceParticipantsOnImport, setReplaceParticipantsOnImport] = useState(false);
 
   const isBrowser = isBrowserPreview();
+
+  const isFormChanged = (current: ParticipantForm, original: ParticipantForm | null) => {
+    if (!original) return false;
+    return current.bib !== original.bib ||
+      current.first !== original.first ||
+      current.last !== original.last ||
+      current.gender !== original.gender ||
+      current.age !== original.age ||
+      current.dob !== original.dob ||
+      Number(current.eventID) !== Number(original.eventID) ||
+      current.checked !== original.checked;
+  };
+
+  const closeParticipantForm = () => {
+    setIsAdding(false);
+    setEditingID(null);
+    setOriginalForm(null);
+  };
+
+  const confirmDiscardFormChanges = () => {
+    if (!isFormChanged(form, originalForm)) return true;
+    return window.confirm("There are unsaved changes. Discard them?");
+  };
+
+  const handleCancelForm = () => {
+    if (!confirmDiscardFormChanges()) return;
+    closeParticipantForm();
+  };
+
+  const handleStartAddParticipant = () => {
+    const emptyForm = makeEmptyForm(events[0]?.id || 0);
+    setForm(emptyForm);
+    setOriginalForm(emptyForm);
+    setEditingID(null);
+    setIsAdding(true);
+    setShowRSUImport(false);
+    setShowLabelPrint(false);
+  };
 
   const updateLabelSheet = (sheet: LabelSheet) => {
     setLabelOptions(prev => ({
@@ -169,11 +228,18 @@ export const ParticipantManagement: React.FC<ParticipantManagementProps> = ({ ra
   };
 
   const handleEdit = (p: Participant) => {
+    if (isAdding && editingID === p.id) {
+      requestAnimationFrame(() => {
+        bibInputRef.current?.focus();
+        bibInputRef.current?.select();
+      });
+      return;
+    }
+    if (isAdding && editingID !== p.id && !confirmDiscardFormChanges()) return;
+    const participantForm = makeParticipantForm(p);
     setEditingID(p.id);
-    setForm({
-      bib: p.bib_number, first: p.first_name, last: p.last_name, gender: p.gender,
-      age: p.age_on_race_day.toString(), dob: p.dob ? p.dob.split('T')[0] : '', eventID: p.event_id, checked: p.checked_in
-    });
+    setForm(participantForm);
+    setOriginalForm(participantForm);
     setShowRSUImport(false);
     setShowLabelPrint(false);
     setIsAdding(true);
@@ -296,10 +362,11 @@ export const ParticipantManagement: React.FC<ParticipantManagementProps> = ({ ra
     const action = editingID ? ParticipantService.UpdateParticipant(p) : ParticipantService.AddParticipant(p);
     action.then(() => {
       if (editingID) {
-        setIsAdding(false);
-        setEditingID(null);
+        closeParticipantForm();
       } else {
-        setForm(makeEmptyForm(events[0]?.id || Number(form.eventID) || 0));
+        const emptyForm = makeEmptyForm(events[0]?.id || Number(form.eventID) || 0);
+        setForm(emptyForm);
+        setOriginalForm(emptyForm);
         requestAnimationFrame(() => firstNameInputRef.current?.focus());
       }
       onRefresh();
@@ -332,13 +399,9 @@ export const ParticipantManagement: React.FC<ParticipantManagementProps> = ({ ra
         <div className="flex-row">
             <button onClick={() => {
                 if (isAdding) {
-                    setIsAdding(false);
-                    setEditingID(null);
+                    handleCancelForm();
                 } else {
-                    setForm(makeEmptyForm(events[0]?.id || 0));
-                    setEditingID(null);
-                    setIsAdding(true);
-                    setShowRSUImport(false);
+                    handleStartAddParticipant();
                 }
             }}>
                 {isAdding ? 'Cancel' : '+ Add Participant'}
@@ -348,10 +411,19 @@ export const ParticipantManagement: React.FC<ParticipantManagementProps> = ({ ra
             <button onClick={handleExportCheckInSheet} style={{ backgroundColor: '#444' }}>Check-In Sheet</button>
             )}
             {!isBrowser && (
-            <button onClick={() => { setShowRSUImport(!showRSUImport); setIsAdding(false); setEditingID(null); }} style={{ backgroundColor: 'var(--accent)' }}>RSU Import</button>
+            <button onClick={() => {
+                if (isAdding && !confirmDiscardFormChanges()) return;
+                setShowRSUImport(!showRSUImport);
+                closeParticipantForm();
+            }} style={{ backgroundColor: 'var(--accent)' }}>RSU Import</button>
             )}
             {!isBrowser && (
-            <button onClick={() => { setShowLabelPrint(!showLabelPrint); setShowRSUImport(false); setIsAdding(false); setEditingID(null); }} style={{ backgroundColor: 'var(--success)' }}>Labels</button>
+            <button onClick={() => {
+                if (isAdding && !confirmDiscardFormChanges()) return;
+                setShowLabelPrint(!showLabelPrint);
+                setShowRSUImport(false);
+                closeParticipantForm();
+            }} style={{ backgroundColor: 'var(--success)' }}>Labels</button>
             )}
             <button onClick={() => {
                 const start = window.prompt("Start bib sequence at:", "100");
@@ -552,7 +624,8 @@ export const ParticipantManagement: React.FC<ParticipantManagementProps> = ({ ra
                     <span style={{ fontWeight: 600, fontSize: '0.85em', color: 'var(--text-dim)' }}>CHECKED IN</span>
                 </label>
             </div>
-            <div style={{ alignSelf: 'center', paddingTop: '20px', textAlign: 'right' }}>
+            <div className="flex-row" style={{ alignSelf: 'center', paddingTop: '20px', justifyContent: 'flex-end' }}>
+                <button type="button" onClick={handleCancelForm} style={{ minWidth: '100px', backgroundColor: '#444' }}>Cancel</button>
                 <button type="submit" style={{ minWidth: '120px' }}>{editingID ? 'Save' : 'Register'}</button>
             </div>
           </form>
