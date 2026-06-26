@@ -7,6 +7,7 @@ import (
 	"os"
 	"sort"
 	"strconv"
+	"strings"
 
 	"github.com/johnfercher/maroto/v2"
 	"github.com/johnfercher/maroto/v2/pkg/components/col"
@@ -60,6 +61,7 @@ type BibLabelOptions struct {
 	StartBib        int     `json:"start_bib"`
 	EndBib          int     `json:"end_bib"`
 	StartPosition   int     `json:"start_position"`
+	CustomBibs      string  `json:"custom_bibs"`
 	MarginTopIn     float64 `json:"margin_top_in"`
 	MarginLeftIn    float64 `json:"margin_left_in"`
 	HorizontalGapIn float64 `json:"horizontal_gap_in"`
@@ -117,6 +119,9 @@ func (s *ReportingService) resolveBibLabelEntries(raceID int, options BibLabelOp
 		}
 		return entries, nil
 	}
+	if options.Source == "custom" || options.Source == "list" {
+		return parseCustomBibLabelEntries(options.CustomBibs)
+	}
 	if options.Source == "placeholder" || options.Source == "placeholders" {
 		count := options.StartBib
 		if count <= 0 {
@@ -155,6 +160,45 @@ func (s *ReportingService) resolveBibLabelEntries(raceID int, options BibLabelOp
 		}
 		return entries[i].Bib < entries[j].Bib
 	})
+	return entries, nil
+}
+
+func parseCustomBibLabelEntries(raw string) ([]bibLabelEntry, error) {
+	tokens := strings.FieldsFunc(raw, func(r rune) bool {
+		return r == ',' || r == '\n' || r == '\r' || r == '\t' || r == ' '
+	})
+
+	entries := make([]bibLabelEntry, 0, len(tokens))
+	for _, token := range tokens {
+		bib := strings.TrimSpace(token)
+		if bib == "" {
+			continue
+		}
+
+		if strings.Count(bib, "-") == 1 {
+			parts := strings.SplitN(bib, "-", 2)
+			start, startErr := strconv.Atoi(strings.TrimSpace(parts[0]))
+			end, endErr := strconv.Atoi(strings.TrimSpace(parts[1]))
+			if startErr == nil && endErr == nil && start > 0 && end > 0 {
+				step := 1
+				if end < start {
+					step = -1
+				}
+				for current := start; ; current += step {
+					entries = append(entries, bibLabelEntry{Bib: strconv.Itoa(current)})
+					if current == end {
+						break
+					}
+				}
+				continue
+			}
+		}
+
+		entries = append(entries, bibLabelEntry{Bib: bib})
+	}
+	if len(entries) == 0 {
+		return nil, fmt.Errorf("enter at least one bib number")
+	}
 	return entries, nil
 }
 

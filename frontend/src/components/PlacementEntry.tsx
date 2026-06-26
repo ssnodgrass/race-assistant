@@ -122,6 +122,7 @@ export const PlacementEntry: React.FC<PlacementEntryProps> = ({ race, participan
   const placeholderNumberFromMarker = (value: string) => value.replace(/^PH:/i, '');
   const normalizeScannedValue = (value: string) => {
     const trimmed = value.trim();
+    if (trimmed === "?") return placeholderMarkerFor(nextPlaceholder);
     if (/^(?:PH|P|PLACEHOLDER)$/i.test(trimmed)) return placeholderMarkerFor(nextPlaceholder);
     const placeholderMatch = trimmed.match(/^(?:PH|P|PLACEHOLDER)[\s:#-]*(\d+)$/i);
     if (placeholderMatch) return placeholderMarkerFor(parseInt(placeholderMatch[1], 10));
@@ -278,7 +279,7 @@ export const PlacementEntry: React.FC<PlacementEntryProps> = ({ race, participan
                             <input ref={bibInputRef} autoFocus value={bib} onChange={e => setBib(e.target.value)} placeholder="Bib" style={{ width: '100%' }} />
                         </div>
                         <button type="submit">Assign Bib</button>
-                        <button type="button" onClick={() => handleAssign(parseInt(place), "?", true)} style={{ backgroundColor: '#a63' }}>Placeholder</button>
+                        <button type="button" onClick={() => handleAssign(parseInt(place), placeholderMarkerFor(nextPlaceholder), true)} style={{ backgroundColor: '#a63' }}>Placeholder #{nextPlaceholder}</button>
                     </form>
                 </div>
             )}
@@ -343,7 +344,7 @@ export const PlacementEntry: React.FC<PlacementEntryProps> = ({ race, participan
                                         <td style={{ paddingLeft: 'var(--space-lg)', color: 'var(--danger)', fontWeight: 700 }}>{isTargeted ? '👉 ' : ''}{row.index}</td>
                                         <td colSpan={3} style={{ color: 'var(--danger)' }}><em>--- EMPTY GAP ---</em></td>
                                         <td style={{ textAlign: 'right', paddingRight: 'var(--space-lg)' }}>
-                                            <button onClick={(e) => { e.stopPropagation(); handleAssign(row.index, "?", true); }} style={{ padding: '4px 12px', fontSize: '0.75rem', backgroundColor: 'var(--danger)' }}>Fill Gap</button>
+                                            <button onClick={(e) => { e.stopPropagation(); handleAssign(row.index, placeholderMarkerFor(nextPlaceholder), true); }} style={{ padding: '4px 12px', fontSize: '0.75rem', backgroundColor: 'var(--danger)' }}>Fill Gap</button>
                                         </td>
                                     </tr>
                                 );

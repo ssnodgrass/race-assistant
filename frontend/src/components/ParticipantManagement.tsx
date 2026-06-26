@@ -13,7 +13,7 @@ interface ParticipantManagementProps {
 }
 
 type SortKey = 'bib' | 'name' | 'gender' | 'age' | 'event' | 'checked';
-type LabelSource = 'participants' | 'range' | 'placeholder';
+type LabelSource = 'participants' | 'range' | 'custom' | 'placeholder';
 type LabelSheet = 'avery5160_30' | 'avery5161_20';
 type ParticipantForm = {
   bib: string;
@@ -57,6 +57,7 @@ export const ParticipantManagement: React.FC<ParticipantManagementProps> = ({ ra
     source: 'participants' as LabelSource,
     startBib: '1',
     endBib: '30',
+    customBibs: '',
     startPosition: '1',
     marginTopIn: '0.5',
     marginLeftIn: '0.1875',
@@ -297,6 +298,10 @@ export const ParticipantManagement: React.FC<ParticipantManagementProps> = ({ ra
       alert("Enter a valid bib range.");
       return;
     }
+    if (labelOptions.source === 'custom' && labelOptions.customBibs.trim() === '') {
+      alert("Enter at least one bib number.");
+      return;
+    }
     if (labelOptions.source === 'placeholder' && startBib <= 0) {
       alert("Enter how many placeholder labels to print.");
       return;
@@ -312,6 +317,7 @@ export const ParticipantManagement: React.FC<ParticipantManagementProps> = ({ ra
         source: labelOptions.source,
         start_bib: startBib,
         end_bib: endBib,
+        custom_bibs: labelOptions.customBibs,
         start_position: parseInt(labelOptions.startPosition) || 1,
         margin_top_in: parseFloat(labelOptions.marginTopIn) || 0,
         margin_left_in: parseFloat(labelOptions.marginLeftIn) || 0,
@@ -517,6 +523,7 @@ export const ParticipantManagement: React.FC<ParticipantManagementProps> = ({ ra
               <select value={labelOptions.source} onChange={e => setLabelOptions({...labelOptions, source: e.target.value as LabelSource})}>
                 <option value="participants">Current participants</option>
                 <option value="range">Bib range</option>
+                <option value="custom">Bib list</option>
                 <option value="placeholder">Placeholder barcode</option>
               </select>
             </div>
@@ -556,6 +563,18 @@ export const ParticipantManagement: React.FC<ParticipantManagementProps> = ({ ra
                   <input type="number" min={1} value={labelOptions.endBib} onChange={e => setLabelOptions({...labelOptions, endBib: e.target.value})} />
                 </div>
               </>
+            )}
+            {labelOptions.source === 'custom' && (
+              <div style={{ gridColumn: 'span 2' }}>
+                <label style={{ display: 'block', marginBottom: '8px', fontWeight: 600, fontSize: '0.85em', color: 'var(--text-dim)' }}>BIB LIST</label>
+                <textarea
+                  value={labelOptions.customBibs}
+                  onChange={e => setLabelOptions({...labelOptions, customBibs: e.target.value})}
+                  placeholder="1502-1513, 1433, 1098, 1083"
+                  rows={3}
+                  style={{ width: '100%', resize: 'vertical' }}
+                />
+              </div>
             )}
             {labelOptions.source === 'placeholder' && (
               <div>
