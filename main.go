@@ -11,6 +11,7 @@ import (
 	"os"
 	"strconv"
 
+	"github.com/pkg/browser"
 	"github.com/ssnodgrass/race-assistant/database"
 	"github.com/ssnodgrass/race-assistant/internal/repository"
 	"github.com/ssnodgrass/race-assistant/services"
@@ -131,6 +132,13 @@ func (s *DatabaseService) GetSavePathCSV(defaultName string) string {
 		AddFilter("All Files (*.*)", "*.*").
 		PromptForSingleSelection()
 	return result
+}
+
+func (s *DatabaseService) OpenFile(path string) error {
+	if path == "" {
+		return nil
+	}
+	return browser.OpenFile(path)
 }
 
 func main() {

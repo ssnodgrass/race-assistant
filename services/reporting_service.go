@@ -5,18 +5,19 @@ import (
 	"encoding/csv"
 	"fmt"
 	"os"
+	"sort"
+	"strconv"
 
 	"github.com/johnfercher/maroto/v2"
-	"github.com/johnfercher/maroto/v2/pkg/components/code"
 	"github.com/johnfercher/maroto/v2/pkg/components/col"
 	"github.com/johnfercher/maroto/v2/pkg/components/row"
 	"github.com/johnfercher/maroto/v2/pkg/components/text"
-	"github.com/johnfercher/maroto/v2/pkg/config"
 	"github.com/johnfercher/maroto/v2/pkg/consts/align"
 	"github.com/johnfercher/maroto/v2/pkg/consts/fontstyle"
-	"github.com/johnfercher/maroto/v2/pkg/consts/pagesize"
 	"github.com/johnfercher/maroto/v2/pkg/core"
 	"github.com/johnfercher/maroto/v2/pkg/props"
+	"github.com/phpdave11/gofpdf"
+	pdfbarcode "github.com/phpdave11/gofpdf/contrib/barcode"
 	"github.com/ssnodgrass/race-assistant/internal/repository"
 )
 
@@ -53,59 +54,208 @@ func (s *ReportingService) SetDB(db *sql.DB) {
 	s.db = db
 }
 
+type BibLabelOptions struct {
+	Sheet           string  `json:"sheet"`
+	Source          string  `json:"source"`
+	StartBib        int     `json:"start_bib"`
+	EndBib          int     `json:"end_bib"`
+	StartPosition   int     `json:"start_position"`
+	MarginTopIn     float64 `json:"margin_top_in"`
+	MarginLeftIn    float64 `json:"margin_left_in"`
+	HorizontalGapIn float64 `json:"horizontal_gap_in"`
+	VerticalGapIn   float64 `json:"vertical_gap_in"`
+}
+
+type bibLabelSheet struct {
+	Name            string
+	Columns         int
+	Rows            int
+	LabelWidthIn    float64
+	LabelHeightIn   float64
+	MarginTopIn     float64
+	MarginLeftIn    float64
+	HorizontalGapIn float64
+	VerticalGapIn   float64
+}
+
+type bibLabelEntry struct {
+	Bib   string
+	Name  string
+	Label string
+}
+
 func (s *ReportingService) GenerateBibLabels(raceID int, outputPath string) error {
+	return s.GenerateBibLabelsWithOptions(raceID, outputPath, BibLabelOptions{
+		Sheet:  "avery5160_30",
+		Source: "participants",
+	})
+}
+
+func (s *ReportingService) GenerateBibLabelsWithOptions(raceID int, outputPath string, options BibLabelOptions) error {
+	sheet := resolveBibLabelSheet(options)
+	entries, err := s.resolveBibLabelEntries(raceID, options)
+	if err != nil {
+		return err
+	}
+	if len(entries) == 0 {
+		return fmt.Errorf("no bib labels to print")
+	}
+	return writeBibLabelPDF(outputPath, sheet, options.StartPosition, entries)
+}
+
+func (s *ReportingService) resolveBibLabelEntries(raceID int, options BibLabelOptions) ([]bibLabelEntry, error) {
+	if options.Source == "range" {
+		if options.StartBib <= 0 || options.EndBib <= 0 {
+			return nil, fmt.Errorf("enter a valid bib range")
+		}
+		if options.EndBib < options.StartBib {
+			return nil, fmt.Errorf("ending bib must be greater than or equal to starting bib")
+		}
+		entries := make([]bibLabelEntry, 0, options.EndBib-options.StartBib+1)
+		for bib := options.StartBib; bib <= options.EndBib; bib++ {
+			entries = append(entries, bibLabelEntry{Bib: strconv.Itoa(bib)})
+		}
+		return entries, nil
+	}
+	if options.Source == "placeholder" || options.Source == "placeholders" {
+		count := options.StartBib
+		if count <= 0 {
+			count = 1
+		}
+		entries := make([]bibLabelEntry, 0, count)
+		for i := 0; i < count; i++ {
+			entries = append(entries, bibLabelEntry{
+				Bib:   "PH",
+				Label: "Placeholder",
+			})
+		}
+		return entries, nil
+	}
+
 	participants, err := s.participantRepo.ListByRace(raceID)
 	if err != nil {
-		return err
+		return nil, err
 	}
 
-	cfg := config.NewBuilder().
-		WithPageSize(pagesize.Letter).
-		WithLeftMargin(4.8).
-		WithTopMargin(12.7).
-		WithRightMargin(4.8).
-		WithBottomMargin(12.7). 
-		Build()
-
-	m := maroto.New(cfg)
-
-	var rows []core.Row
-	for i := 0; i < len(participants); i += 3 {
-		var cols []core.Col
-		for j := 0; j < 3; j++ {
-			if i+j < len(participants) {
-				p := participants[i+j]
-				cols = append(cols, col.New(4).Add(
-					text.New(fmt.Sprintf("%s %s", p.FirstName, p.LastName), props.Text{
-						Size:  7,
-						Align: align.Center,
-						Top:   3,
-					}),
-					code.NewBar(p.BibNumber, props.Barcode{
-						Center:  true,
-						Percent: 60,
-						Top:     8,
-					}),
-					text.New(p.BibNumber, props.Text{
-						Size:  9,
-						Style: fontstyle.Bold,
-						Align: align.Center,
-						Top:   18,
-					}),
-				))
-			} else {
-				cols = append(cols, col.New(4))
-			}
+	entries := make([]bibLabelEntry, 0, len(participants))
+	for _, p := range participants {
+		if p.BibNumber == "" {
+			continue
 		}
-		rows = append(rows, row.New(25.3).Add(cols...))
+		entries = append(entries, bibLabelEntry{
+			Bib:  p.BibNumber,
+			Name: fmt.Sprintf("%s %s", p.FirstName, p.LastName),
+		})
+	}
+	sort.SliceStable(entries, func(i, j int) bool {
+		left, leftErr := strconv.Atoi(entries[i].Bib)
+		right, rightErr := strconv.Atoi(entries[j].Bib)
+		if leftErr == nil && rightErr == nil {
+			return left < right
+		}
+		return entries[i].Bib < entries[j].Bib
+	})
+	return entries, nil
+}
+
+func resolveBibLabelSheet(options BibLabelOptions) bibLabelSheet {
+	sheet := bibLabelSheet{
+		Name:            "Avery 5160 / 30 per sheet",
+		Columns:         3,
+		Rows:            10,
+		LabelWidthIn:    2.625,
+		LabelHeightIn:   1,
+		MarginTopIn:     0.5,
+		MarginLeftIn:    0.1875,
+		HorizontalGapIn: 0.125,
+		VerticalGapIn:   0,
+	}
+	if options.Sheet == "avery5161_20" {
+		sheet = bibLabelSheet{
+			Name:            "Avery 5161 / 20 per sheet",
+			Columns:         2,
+			Rows:            10,
+			LabelWidthIn:    4,
+			LabelHeightIn:   1,
+			MarginTopIn:     0.5,
+			MarginLeftIn:    0.15625,
+			HorizontalGapIn: 0.1875,
+			VerticalGapIn:   0,
+		}
+	}
+	sheet.MarginTopIn = options.MarginTopIn
+	sheet.MarginLeftIn = options.MarginLeftIn
+	if options.HorizontalGapIn >= 0 {
+		sheet.HorizontalGapIn = options.HorizontalGapIn
+	}
+	if options.VerticalGapIn >= 0 {
+		sheet.VerticalGapIn = options.VerticalGapIn
+	}
+	return sheet
+}
+
+func writeBibLabelPDF(outputPath string, sheet bibLabelSheet, startPosition int, entries []bibLabelEntry) error {
+	const mmPerInch = 25.4
+	pdf := gofpdf.New("P", "mm", "Letter", "")
+	pdf.SetAutoPageBreak(false, 0)
+	pdf.SetMargins(0, 0, 0)
+	pdf.AddPage()
+
+	if startPosition < 1 {
+		startPosition = 1
+	}
+	slotsPerPage := sheet.Columns * sheet.Rows
+	if startPosition > slotsPerPage {
+		startPosition = slotsPerPage
+	}
+	slot := startPosition - 1
+
+	for _, entry := range entries {
+		if slot > 0 && slot%slotsPerPage == 0 {
+			pdf.AddPage()
+		}
+
+		pageSlot := slot % slotsPerPage
+		colIndex := pageSlot % sheet.Columns
+		rowIndex := pageSlot / sheet.Columns
+		x := (sheet.MarginLeftIn + float64(colIndex)*(sheet.LabelWidthIn+sheet.HorizontalGapIn)) * mmPerInch
+		y := (sheet.MarginTopIn + float64(rowIndex)*(sheet.LabelHeightIn+sheet.VerticalGapIn)) * mmPerInch
+		w := sheet.LabelWidthIn * mmPerInch
+		h := sheet.LabelHeightIn * mmPerInch
+
+		drawBibLabel(pdf, entry, x, y, w, h)
+		slot++
 	}
 
-	m.AddRows(rows...)
-	doc, err := m.Generate()
-	if err != nil {
-		return err
+	return pdf.OutputFileAndClose(outputPath)
+}
+
+func drawBibLabel(pdf *gofpdf.Fpdf, entry bibLabelEntry, x, y, w, h float64) {
+	paddingX := 2.5
+	nameHeight := 4.2
+	bibHeight := 4.5
+	barcodeY := y + nameHeight + 2.5
+	barcodeH := h - nameHeight - bibHeight - 5.5
+	if barcodeH < 8 {
+		barcodeH = 8
 	}
-	return doc.Save(outputPath)
+
+	if entry.Name != "" {
+		pdf.SetFont("Helvetica", "", 7)
+		pdf.SetXY(x+paddingX, y+1.5)
+		pdf.CellFormat(w-paddingX*2, 3.5, entry.Name, "", 0, "C", false, 0, "")
+	}
+
+	key := pdfbarcode.RegisterCode128(pdf, entry.Bib)
+	pdfbarcode.Barcode(pdf, key, x+paddingX, barcodeY, w-paddingX*2, barcodeH, false)
+
+	pdf.SetFont("Helvetica", "B", 10)
+	pdf.SetXY(x+paddingX, y+h-bibHeight-1)
+	label := entry.Bib
+	if entry.Label != "" {
+		label = entry.Label
+	}
+	pdf.CellFormat(w-paddingX*2, bibHeight, label, "", 0, "C", false, 0, "")
 }
 
 func (s *ReportingService) GenerateAwardsPDF(eventID int, outputPath string) error {
@@ -133,8 +283,10 @@ func (s *ReportingService) GenerateAwardsPDF(eventID int, outputPath string) err
 		m.AddRows(row.New(10).Add(col.New(12).Add(text.New(cat.Name, props.Text{Size: 12, Style: fontstyle.Bold, Top: 5}))))
 		for i, w := range cat.Winners {
 			activeTime := w.Time
-			if activeTime == "" { activeTime = w.UnofficialTime }
-			
+			if activeTime == "" {
+				activeTime = w.UnofficialTime
+			}
+
 			m.AddRows(row.New(8).Add(
 				col.New(1).Add(text.New(fmt.Sprintf("%d.", i+1), props.Text{Size: 10})),
 				col.New(2).Add(text.New(w.BibNumber, props.Text{Size: 10})),
@@ -183,7 +335,9 @@ func (s *ReportingService) GenerateStandingsPDF(eventID int, outputPath string) 
 
 	for _, r := range results {
 		activeTime := r.Time
-		if activeTime == "" { activeTime = r.UnofficialTime }
+		if activeTime == "" {
+			activeTime = r.UnofficialTime
+		}
 
 		m.AddRows(row.New(8).Add(
 			col.New(1).Add(text.New(fmt.Sprintf("%d", r.EventPlace), props.Text{Size: 10})),

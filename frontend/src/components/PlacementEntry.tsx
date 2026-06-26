@@ -15,6 +15,12 @@ interface TableRow {
     data: ChuteAssignment | undefined;
 }
 
+interface DuplicateScan {
+  bib: string;
+  originalPlace: number;
+  duplicatePlace: number;
+}
+
 export const PlacementEntry: React.FC<PlacementEntryProps> = ({ race, participants, events, onRefresh, onBack }) => {
   const [placements, setPlacements] = useState<ChuteAssignment[]>([]);
   const [selectedEventID, setSelectedEventID] = useState<number>(events[0]?.id || 0);
@@ -25,6 +31,8 @@ export const PlacementEntry: React.FC<PlacementEntryProps> = ({ race, participan
   const [showUnassigned, setShowUnassigned] = useState(false);
   const [scannerMode, setScannerMode] = useState(false);
   const [lastScanned, setLastScanned] = useState<{place: number, bib: string, name: string} | null>(null);
+  const [duplicateScan, setDuplicateScan] = useState<DuplicateScan | null>(null);
+  const [nextPlaceholder, setNextPlaceholder] = useState(1);
   const [elapsed, setElapsed] = useState('00:00:00');
   
   const bibInputRef = useRef<HTMLInputElement>(null);
@@ -95,28 +103,64 @@ export const PlacementEntry: React.FC<PlacementEntryProps> = ({ race, participan
         const sorted = data || [];
         setPlacements(sorted);
         const next = (sorted.length > 0) ? Math.max(...sorted.map(d => d.place)) + 1 : 1;
+        const placeholderNumbers = sorted
+          .filter(d => /^PH:\d+$/i.test(d.bib_number))
+          .map(d => parseInt(d.bib_number.replace(/^PH:/i, ''), 10))
+          .filter(n => !Number.isNaN(n));
+        setNextPlaceholder(placeholderNumbers.length > 0 ? Math.max(...placeholderNumbers) + 1 : 1);
         setNextPlace(next);
         setPlace(prev => (!prev || parseInt(prev) >= next - 1) ? next.toString() : prev);
     }).catch(console.error);
   };
 
   const resetTarget = () => setPlace(nextPlace.toString());
+  const duplicateMarkerFor = (value: string) => `DUP:${value}`;
+  const isDuplicateMarker = (value: string) => value.startsWith('DUP:');
+  const duplicateBibFromMarker = (value: string) => value.replace(/^DUP:/, '');
+  const placeholderMarkerFor = (value: number) => `PH:${value}`;
+  const isPlaceholderMarker = (value: string) => /^PH:\d+$/i.test(value);
+  const placeholderNumberFromMarker = (value: string) => value.replace(/^PH:/i, '');
+  const normalizeScannedValue = (value: string) => {
+    const trimmed = value.trim();
+    if (/^(?:PH|P|PLACEHOLDER)$/i.test(trimmed)) return placeholderMarkerFor(nextPlaceholder);
+    const placeholderMatch = trimmed.match(/^(?:PH|P|PLACEHOLDER)[\s:#-]*(\d+)$/i);
+    if (placeholderMatch) return placeholderMarkerFor(parseInt(placeholderMatch[1], 10));
+    return trimmed;
+  };
+
+  const getParticipantName = (bibNumber: string) => {
+    const participant = participants.find(reg => reg.bib_number === bibNumber);
+    if (participant) return `${participant.first_name} ${participant.last_name}`.trim();
+    if (bibNumber === "?") return "Placeholder";
+    if (isPlaceholderMarker(bibNumber)) return `Placeholder #${placeholderNumberFromMarker(bibNumber)}`;
+    if (isDuplicateMarker(bibNumber)) return `Duplicate scan for bib ${duplicateBibFromMarker(bibNumber)}`;
+    return "Unknown Runner";
+  };
 
   const handleAssign = async (p: number, b: string, skipConfirm = false) => {
     if (!b || !p) return;
-    const existingPlacement = placements.find(pl => pl.place === p);
-    if (!skipConfirm && existingPlacement && existingPlacement.bib_number !== b) {
-      const existingParticipant = participants.find(reg => reg.bib_number === existingPlacement.bib_number);
-      const existingName = existingParticipant
-        ? `${existingParticipant.first_name} ${existingParticipant.last_name}`.trim()
-        : (existingPlacement.bib_number === "?" ? "Placeholder" : "Unknown Runner");
-      const replacementParticipant = participants.find(reg => reg.bib_number === b);
-      const replacementName = replacementParticipant
-        ? `${replacementParticipant.first_name} ${replacementParticipant.last_name}`.trim()
-        : (b === "?" ? "Placeholder" : "Unknown Runner");
+    const normalizedBib = normalizeScannedValue(b);
+    const existingBibPlacement = placements.find(pl => pl.bib_number === normalizedBib && pl.place !== p);
+    if (scannerMode && normalizedBib !== "?" && existingBibPlacement) {
+      const marker = duplicateMarkerFor(normalizedBib);
+      const unofficialTime = race.start_time ? elapsed : "";
+      try {
+        await TimingService.AssignBibToPlaceWithTimeForEvent(race.id, selectedEventID, p, marker, unofficialTime);
+        setDuplicateScan({ bib: normalizedBib, originalPlace: existingBibPlacement.place, duplicatePlace: p });
+        setLastScanned({ place: p, bib: normalizedBib, name: `DUPLICATE - already at place ${existingBibPlacement.place}` });
+        loadPlacements();
+        setBib('');
+        bibInputRef.current?.focus();
+      } catch (e) {
+        console.error(e);
+      }
+      return;
+    }
 
+    const existingPlacement = placements.find(pl => pl.place === p);
+    if (!skipConfirm && existingPlacement && existingPlacement.bib_number !== normalizedBib) {
       const confirmed = window.confirm(
-        `Replace placement ${p}?\n\nCurrent: ${existingPlacement.bib_number} - ${existingName}\nNew: ${b} - ${replacementName}`
+        `Replace placement ${p}?\n\nCurrent: ${existingPlacement.bib_number} - ${getParticipantName(existingPlacement.bib_number)}\nNew: ${normalizedBib} - ${getParticipantName(normalizedBib)}`
       );
       if (!confirmed) {
         bibInputRef.current?.focus();
@@ -125,10 +169,14 @@ export const PlacementEntry: React.FC<PlacementEntryProps> = ({ race, participan
     }
 
     const unofficialTime = race.start_time ? elapsed : "";
-    TimingService.AssignBibToPlaceWithTimeForEvent(race.id, selectedEventID, p, b, unofficialTime)
+    TimingService.AssignBibToPlaceWithTimeForEvent(race.id, selectedEventID, p, normalizedBib, unofficialTime)
       .then(() => {
-        const part = participants.find(reg => reg.bib_number === b);
-        setLastScanned({ place: p, bib: b, name: part ? `${part.first_name} ${part.last_name}` : "Unknown Runner" });
+        setDuplicateScan(null);
+        setLastScanned({ place: p, bib: normalizedBib, name: getParticipantName(normalizedBib) });
+        if (isPlaceholderMarker(normalizedBib)) {
+          const placeholderNumber = parseInt(placeholderNumberFromMarker(normalizedBib), 10);
+          if (placeholderNumber >= nextPlaceholder) setNextPlaceholder(placeholderNumber + 1);
+        }
         loadPlacements();
         setBib('');
         bibInputRef.current?.focus();
@@ -239,13 +287,32 @@ export const PlacementEntry: React.FC<PlacementEntryProps> = ({ race, participan
                 <div className="card" style={{ border: '4px solid var(--success)', textAlign: 'center', padding: 'var(--space-xl)', backgroundColor: 'rgba(76, 175, 80, 0.05)', marginBottom: 'var(--space-md)' }}>
                     <h1 className="text-success" style={{ fontSize: '2.5rem', marginBottom: 'var(--space-sm)' }}>SCANNER ACTIVE</h1>
                     <p style={{ fontSize: '1.2rem', opacity: 0.8 }}>Targeting Place #{place}</p>
+                    {duplicateScan && (
+                        <div style={{ margin: '16px auto 0', maxWidth: '720px', border: '2px solid var(--danger)', backgroundColor: 'rgba(244, 67, 54, 0.12)', color: 'var(--danger)', padding: '12px 16px', fontSize: '1.2rem', fontWeight: 800 }}>
+                            DUPLICATE BIB {duplicateScan.bib}: original place #{duplicateScan.originalPlace}, duplicate scan at #{duplicateScan.duplicatePlace}
+                        </div>
+                    )}
                     {lastScanned && (
                         <div style={{ marginTop: '20px' }}>
                             <div style={{ fontSize: '3.5rem', fontWeight: 900 }}>#{lastScanned.place}: {lastScanned.bib}</div>
                             <div style={{ fontSize: '1.5rem', color: 'var(--text-dim)' }}>{lastScanned.name}</div>
                         </div>
                     )}
-                    <input ref={bibInputRef} value={bib} onChange={e => setBib(e.target.value)} onKeyDown={e => e.key === 'Enter' && handleAssign(parseInt(place), bib)} style={{ opacity: 0, height: 0, position: 'absolute' }} autoFocus />
+                    <form className="scanner-controls" onSubmit={(e) => { e.preventDefault(); handleAssign(parseInt(place), bib, true); }}>
+                        <div style={{ minWidth: '120px', textAlign: 'left' }}>
+                            <label style={{ display: 'block', marginBottom: '6px', fontWeight: 600, fontSize: '0.8em', color: 'var(--text-dim)' }}>TARGET</label>
+                            <div style={{ height: '42px', display: 'flex', alignItems: 'center', justifyContent: 'center', border: '1px solid var(--border)', borderRadius: '4px', backgroundColor: 'var(--bg-input)', fontWeight: 800, fontSize: '1.1rem' }}>
+                                #{place}
+                            </div>
+                        </div>
+                        <div style={{ minWidth: '220px', textAlign: 'left' }}>
+                            <label style={{ display: 'block', marginBottom: '6px', fontWeight: 600, fontSize: '0.8em', color: 'var(--text-dim)' }}>SCAN / BIB</label>
+                            <input ref={bibInputRef} value={bib} onChange={e => setBib(e.target.value)} placeholder="Scan or type bib" autoFocus style={{ width: '100%' }} />
+                        </div>
+                        <button type="submit" style={{ backgroundColor: 'var(--success)', minWidth: '130px', whiteSpace: 'nowrap' }}>Assign Bib</button>
+                        <button type="button" onClick={() => handleAssign(parseInt(place), placeholderMarkerFor(nextPlaceholder), true)} style={{ backgroundColor: '#a63', minWidth: '130px', whiteSpace: 'nowrap' }}>Placeholder #{nextPlaceholder}</button>
+                        <button type="button" onClick={resetTarget} style={{ backgroundColor: '#444', minWidth: '130px', whiteSpace: 'nowrap' }}>Next Place</button>
+                    </form>
                 </div>
             )}
 
@@ -263,8 +330,13 @@ export const PlacementEntry: React.FC<PlacementEntryProps> = ({ race, participan
                     <tbody>
                         {tableRows.map((row) => {
                             const p = row.data;
-                            const part = p ? participants.find(reg => reg.bib_number === p.bib_number) : null;
                             const isTargeted = place === row.index.toString();
+                            const isDuplicateOriginal = !!duplicateScan && row.index === duplicateScan.originalPlace;
+                            const isDuplicateScan = !!p && isDuplicateMarker(p.bib_number);
+                            const isPlaceholderRow = !!p && isPlaceholderMarker(p.bib_number);
+                            const rowBackground = isDuplicateOriginal || isDuplicateScan
+                                ? 'rgba(244, 67, 54, 0.14)'
+                                : (isPlaceholderRow ? 'rgba(170, 102, 51, 0.14)' : (isTargeted ? 'rgba(0, 123, 255, 0.1)' : 'transparent'));
                             if (!p) {
                                 return (
                                     <tr key={row.index} onClick={() => setPlace(row.index.toString())} style={{ backgroundColor: isTargeted ? 'rgba(244, 67, 54, 0.1)' : 'transparent', cursor: 'pointer' }}>
@@ -277,10 +349,14 @@ export const PlacementEntry: React.FC<PlacementEntryProps> = ({ race, participan
                                 );
                             }
                             return (
-                                <tr key={p.place} onClick={() => setPlace(p.place.toString())} style={{ backgroundColor: isTargeted ? 'rgba(0, 123, 255, 0.1)' : 'transparent', cursor: 'pointer' }}>
+                                <tr key={p.place} onClick={() => setPlace(p.place.toString())} style={{ backgroundColor: rowBackground, cursor: 'pointer' }}>
                                     <td style={{ paddingLeft: 'var(--space-lg)' }}>{isTargeted ? '👉 ' : ''}{p.place}</td>
-                                    <td><strong>{p.bib_number}</strong></td>
-                                    <td>{part ? `${part.first_name} ${part.last_name}` : (p.bib_number === "?" ? "Placeholder" : "Unregistered")}</td>
+                                    <td>
+                                        <strong>{isDuplicateScan ? duplicateBibFromMarker(p.bib_number) : (isPlaceholderMarker(p.bib_number) ? `Placeholder #${placeholderNumberFromMarker(p.bib_number)}` : p.bib_number)}</strong>
+                                        {(isDuplicateOriginal || isDuplicateScan) && <span className="badge" style={{ marginLeft: '8px', backgroundColor: 'var(--danger)', color: 'white' }}>DUP</span>}
+                                        {isPlaceholderMarker(p.bib_number) && <span className="badge" style={{ marginLeft: '8px', backgroundColor: '#a63', color: 'white' }}>PLACEHOLDER</span>}
+                                    </td>
+                                    <td>{getParticipantName(p.bib_number)}</td>
                                     <td style={{ fontFamily: 'monospace', color: 'var(--text-dim)' }}>{p.unofficial_time || '--'}</td>
                                     <td style={{ textAlign: 'right', paddingRight: 'var(--space-lg)' }}>
                                         <div className="flex-row" style={{ justifyContent: 'flex-end', gap: '4px' }}>

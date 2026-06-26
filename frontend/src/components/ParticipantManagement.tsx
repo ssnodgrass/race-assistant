@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { ParticipantService, RunSignUpService, RaceService } from '../../bindings/github.com/ssnodgrass/race-assistant/services';
+import { ParticipantService, ReportingService, RunSignUpService, RaceService } from '../../bindings/github.com/ssnodgrass/race-assistant/services';
+import { DatabaseService } from '../../bindings/github.com/ssnodgrass/race-assistant';
 import { Participant, Event as RaceEvent, RSUEvent } from '../../bindings/github.com/ssnodgrass/race-assistant/models';
 import { isBrowserPreview } from '../utils/runtime';
 
@@ -12,6 +13,8 @@ interface ParticipantManagementProps {
 }
 
 type SortKey = 'bib' | 'name' | 'gender' | 'age' | 'event' | 'checked';
+type LabelSource = 'participants' | 'range' | 'placeholder';
+type LabelSheet = 'avery5160_30' | 'avery5161_20';
 
 export const ParticipantManagement: React.FC<ParticipantManagementProps> = ({ raceID, events, participants, onRefresh, onImport }) => {
   const makeEmptyForm = (eventID: number) => ({
@@ -23,8 +26,22 @@ export const ParticipantManagement: React.FC<ParticipantManagementProps> = ({ ra
   const [isSyncing, setIsSyncing] = useState(false);
   const [isDeletingAll, setIsDeletingAll] = useState(false);
   const [isClearingBibs, setIsClearingBibs] = useState(false);
+  const [showLabelPrint, setShowLabelPrint] = useState(false);
+  const [isGeneratingLabels, setIsGeneratingLabels] = useState(false);
+  const [lastLabelPDFPath, setLastLabelPDFPath] = useState('');
   const [searchQuery, setSearchQuery] = useState('');
   const [form, setForm] = useState(makeEmptyForm(events[0]?.id || 0));
+  const [labelOptions, setLabelOptions] = useState({
+    sheet: 'avery5160_30' as LabelSheet,
+    source: 'participants' as LabelSource,
+    startBib: '1',
+    endBib: '30',
+    startPosition: '1',
+    marginTopIn: '0.5',
+    marginLeftIn: '0.1875',
+    horizontalGapIn: '0.125',
+    verticalGapIn: '0',
+  });
   const firstNameInputRef = useRef<HTMLInputElement | null>(null);
 
   // Sorting State
@@ -39,6 +56,17 @@ export const ParticipantManagement: React.FC<ParticipantManagementProps> = ({ ra
   const [replaceParticipantsOnImport, setReplaceParticipantsOnImport] = useState(false);
 
   const isBrowser = isBrowserPreview();
+
+  const updateLabelSheet = (sheet: LabelSheet) => {
+    setLabelOptions(prev => ({
+      ...prev,
+      sheet,
+      marginTopIn: '0.5',
+      marginLeftIn: sheet === 'avery5160_30' ? '0.1875' : '0.15625',
+      horizontalGapIn: sheet === 'avery5160_30' ? '0.125' : '0.1875',
+      verticalGapIn: '0',
+    }));
+  };
 
   useEffect(() => {
     if (showRSUImport) loadRSUInfo();
@@ -182,6 +210,52 @@ export const ParticipantManagement: React.FC<ParticipantManagementProps> = ({ ra
     }
   };
 
+  const handlePrintLabels = async (openAfterGenerate = false) => {
+    if (labelOptions.source === 'participants' && participants.every(p => p.bib_number.trim() === '')) {
+      alert("There are no participant bib numbers to print.");
+      return;
+    }
+
+    const startBib = parseInt(labelOptions.startBib) || 0;
+    const endBib = parseInt(labelOptions.endBib) || 0;
+    if (labelOptions.source === 'range' && (startBib <= 0 || endBib < startBib)) {
+      alert("Enter a valid bib range.");
+      return;
+    }
+    if (labelOptions.source === 'placeholder' && startBib <= 0) {
+      alert("Enter how many placeholder labels to print.");
+      return;
+    }
+
+    const path = await DatabaseService.GetSavePathPDF("Bib_Labels.pdf");
+    if (!path) return;
+
+    setIsGeneratingLabels(true);
+    try {
+      await ReportingService.GenerateBibLabelsWithOptions(raceID, path, {
+        sheet: labelOptions.sheet,
+        source: labelOptions.source,
+        start_bib: startBib,
+        end_bib: endBib,
+        start_position: parseInt(labelOptions.startPosition) || 1,
+        margin_top_in: parseFloat(labelOptions.marginTopIn) || 0,
+        margin_left_in: parseFloat(labelOptions.marginLeftIn) || 0,
+        horizontal_gap_in: parseFloat(labelOptions.horizontalGapIn) || 0,
+        vertical_gap_in: parseFloat(labelOptions.verticalGapIn) || 0,
+      });
+      setLastLabelPDFPath(path);
+      if (openAfterGenerate) {
+        await DatabaseService.OpenFile(path);
+      } else {
+        alert("Bib label PDF generated.");
+      }
+    } catch (e) {
+      alert("Failed to generate bib labels: " + e);
+    } finally {
+      setIsGeneratingLabels(false);
+    }
+  };
+
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     if (!form.gender) {
@@ -251,6 +325,9 @@ export const ParticipantManagement: React.FC<ParticipantManagementProps> = ({ ra
             <button onClick={onImport} style={{ backgroundColor: '#444' }}>CSV Import</button>
             {!isBrowser && (
             <button onClick={() => { setShowRSUImport(!showRSUImport); setIsAdding(false); setEditingID(null); }} style={{ backgroundColor: 'var(--accent)' }}>RSU Import</button>
+            )}
+            {!isBrowser && (
+            <button onClick={() => { setShowLabelPrint(!showLabelPrint); setShowRSUImport(false); setIsAdding(false); setEditingID(null); }} style={{ backgroundColor: 'var(--success)' }}>Labels</button>
             )}
             <button onClick={() => {
                 const start = window.prompt("Start bib sequence at:", "100");
@@ -329,6 +406,85 @@ export const ParticipantManagement: React.FC<ParticipantManagementProps> = ({ ra
                     <button onClick={handleRSUImportAction} style={{ width: '100%', padding: '15px', marginTop: '10px' }} disabled={isSyncing}>IMPORT DATA</button>
                 </div>
             </div>
+        </div>
+      )}
+
+      {showLabelPrint && (
+        <div className="card" style={{ marginBottom: 'var(--space-lg)', border: '2px solid var(--success)' }}>
+          <div className="flex-between" style={{ marginBottom: 'var(--space-md)' }}>
+            <h3 style={{ margin: 0 }}>Print Bib Labels</h3>
+            <button onClick={() => setShowLabelPrint(false)} style={{ backgroundColor: 'transparent', color: 'var(--text-dim)', padding: '4px 8px' }}>Close</button>
+          </div>
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, minmax(140px, 1fr))', gap: '16px', alignItems: 'end' }}>
+            <div>
+              <label style={{ display: 'block', marginBottom: '8px', fontWeight: 600, fontSize: '0.85em', color: 'var(--text-dim)' }}>SOURCE</label>
+              <select value={labelOptions.source} onChange={e => setLabelOptions({...labelOptions, source: e.target.value as LabelSource})}>
+                <option value="participants">Current participants</option>
+                <option value="range">Bib range</option>
+                <option value="placeholder">Placeholder barcode</option>
+              </select>
+            </div>
+            <div>
+              <label style={{ display: 'block', marginBottom: '8px', fontWeight: 600, fontSize: '0.85em', color: 'var(--text-dim)' }}>SHEET</label>
+              <select value={labelOptions.sheet} onChange={e => updateLabelSheet(e.target.value as LabelSheet)}>
+                <option value="avery5160_30">Avery 5160 - 30 labels</option>
+                <option value="avery5161_20">Avery 5161 - 20 labels</option>
+              </select>
+            </div>
+            <div>
+              <label style={{ display: 'block', marginBottom: '8px', fontWeight: 600, fontSize: '0.85em', color: 'var(--text-dim)' }}>START POSITION</label>
+              <input type="number" min={1} value={labelOptions.startPosition} onChange={e => setLabelOptions({...labelOptions, startPosition: e.target.value})} />
+            </div>
+            <button onClick={() => handlePrintLabels(false)} disabled={isGeneratingLabels} style={{ padding: '12px 18px', backgroundColor: 'var(--success)' }}>
+              {isGeneratingLabels ? 'Generating...' : 'Generate PDF'}
+            </button>
+            <button onClick={() => handlePrintLabels(true)} disabled={isGeneratingLabels} style={{ padding: '12px 18px', backgroundColor: 'var(--accent)' }}>
+              Generate & Open
+            </button>
+            <button
+              onClick={() => DatabaseService.OpenFile(lastLabelPDFPath).catch(e => alert("Failed to open PDF: " + e))}
+              disabled={!lastLabelPDFPath || isGeneratingLabels}
+              style={{ padding: '12px 18px', backgroundColor: '#444' }}
+            >
+              Open Last PDF
+            </button>
+
+            {labelOptions.source === 'range' && (
+              <>
+                <div>
+                  <label style={{ display: 'block', marginBottom: '8px', fontWeight: 600, fontSize: '0.85em', color: 'var(--text-dim)' }}>START BIB</label>
+                  <input type="number" min={1} value={labelOptions.startBib} onChange={e => setLabelOptions({...labelOptions, startBib: e.target.value})} />
+                </div>
+                <div>
+                  <label style={{ display: 'block', marginBottom: '8px', fontWeight: 600, fontSize: '0.85em', color: 'var(--text-dim)' }}>END BIB</label>
+                  <input type="number" min={1} value={labelOptions.endBib} onChange={e => setLabelOptions({...labelOptions, endBib: e.target.value})} />
+                </div>
+              </>
+            )}
+            {labelOptions.source === 'placeholder' && (
+              <div>
+                <label style={{ display: 'block', marginBottom: '8px', fontWeight: 600, fontSize: '0.85em', color: 'var(--text-dim)' }}>COPIES</label>
+                <input type="number" min={1} value={labelOptions.startBib} onChange={e => setLabelOptions({...labelOptions, startBib: e.target.value})} />
+              </div>
+            )}
+
+            <div>
+              <label style={{ display: 'block', marginBottom: '8px', fontWeight: 600, fontSize: '0.85em', color: 'var(--text-dim)' }}>TOP MARGIN (IN)</label>
+              <input type="number" step="0.001" value={labelOptions.marginTopIn} onChange={e => setLabelOptions({...labelOptions, marginTopIn: e.target.value})} />
+            </div>
+            <div>
+              <label style={{ display: 'block', marginBottom: '8px', fontWeight: 600, fontSize: '0.85em', color: 'var(--text-dim)' }}>LEFT MARGIN (IN)</label>
+              <input type="number" step="0.001" value={labelOptions.marginLeftIn} onChange={e => setLabelOptions({...labelOptions, marginLeftIn: e.target.value})} />
+            </div>
+            <div>
+              <label style={{ display: 'block', marginBottom: '8px', fontWeight: 600, fontSize: '0.85em', color: 'var(--text-dim)' }}>H GAP (IN)</label>
+              <input type="number" step="0.001" min={0} value={labelOptions.horizontalGapIn} onChange={e => setLabelOptions({...labelOptions, horizontalGapIn: e.target.value})} />
+            </div>
+            <div>
+              <label style={{ display: 'block', marginBottom: '8px', fontWeight: 600, fontSize: '0.85em', color: 'var(--text-dim)' }}>V GAP (IN)</label>
+              <input type="number" step="0.001" min={0} value={labelOptions.verticalGapIn} onChange={e => setLabelOptions({...labelOptions, verticalGapIn: e.target.value})} />
+            </div>
+          </div>
         </div>
       )}
 

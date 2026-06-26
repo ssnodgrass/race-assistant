@@ -237,6 +237,30 @@ tr:hover td { background-color: #ffffff05; }
   font-weight: bold;
 }
 
+.scanner-controls {
+  display: grid;
+  grid-template-columns: 120px minmax(220px, 1fr) repeat(3, minmax(130px, max-content));
+  gap: 16px;
+  align-items: end;
+  margin-top: 24px;
+  width: 100%;
+}
+
+.scanner-controls button {
+  min-width: 130px;
+  white-space: nowrap;
+}
+
+@media (max-width: 1100px) {
+  .scanner-controls {
+    grid-template-columns: 120px minmax(220px, 1fr);
+  }
+
+  .scanner-controls button {
+    width: 100%;
+  }
+}
+
 /* Scrollbar */
 ::-webkit-scrollbar { width: 10px; }
 ::-webkit-scrollbar-track { background: var(--bg-main); }
