@@ -1,6 +1,7 @@
 export function pairingCredentialFrom(value: string, expectedOrigin = location.origin): string {
   const trimmed = value.trim();
   if (/^\d{6,8}$/.test(trimmed)) return trimmed;
+  if (/^[a-f0-9]{64}$/i.test(trimmed)) return trimmed;
 
   let url: URL;
   try {

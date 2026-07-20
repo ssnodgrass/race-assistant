@@ -19,6 +19,7 @@ const ROLE_KEY = 'companion-held-role';
 
 function storedState():State|null { try{return JSON.parse(localStorage.getItem(STATE_KEY)||'null')}catch{return null} }
 function storedRole():Role|null { const role=localStorage.getItem(ROLE_KEY);return role==='start'||role==='timer'||role==='bib'?role:null }
+function storedDeviceName():string { const saved=localStorage.getItem('companion-name')||'';return saved==='Race phone'?'' : saved }
 
 function PairingScanner({onScan,onClose}:{onScan:(value:string)=>void;onClose:()=>void}) {
   const videoRef=useRef<HTMLVideoElement>(null);
@@ -119,7 +120,7 @@ const nowClientEpoch = () => performance.timeOrigin + performance.now();
 export function CompanionApp() {
   const [state,setState]=useState<State|null>(storedState);
   const [paired,setPaired]=useState<boolean|null>(()=>localStorage.getItem(PAIRED_KEY)==='true'?true:null);
-  const [name,setName]=useState(localStorage.getItem('companion-name')||'Race phone');
+  const [name,setName]=useState(storedDeviceName);
   const [pairCredential,setPairCredential]=useState(new URLSearchParams(location.hash.slice(1)).get('pair')||'');
   const [pairCode,setPairCode]=useState('');
   const [scannerOpen,setScannerOpen]=useState(false);
@@ -247,7 +248,7 @@ export function CompanionApp() {
     <div className="companion-card pairing-card">
       <h1>Race Assistant</h1>
       <p>Pair this browser or installed app with the current race session.</p>
-      <label className="pair-label">DEVICE NAME<input value={name} onChange={e=>setName(e.target.value)} autoComplete="off"/></label>
+      <label className="pair-label">DEVICE NAME<input value={name} placeholder="Race phone" onChange={e=>setName(e.target.value)} autoComplete="off"/></label>
       {pairCredential?<>
         <div className="pair-ready">✓ Pairing QR ready</div>
         <button disabled={pairingBusy} onClick={()=>pair()}>{pairingBusy?'Pairing…':'Pair This Device'}</button>
