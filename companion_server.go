@@ -20,6 +20,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/ssnodgrass/race-assistant/models"
@@ -32,6 +33,52 @@ type companionPKI struct {
 	certFile      string
 	keyFile       string
 	host          string
+}
+
+type pairingAttemptWindow struct {
+	started  time.Time
+	attempts int
+}
+
+type pairingAttemptLimiter struct {
+	mu       sync.Mutex
+	windows  map[string]pairingAttemptWindow
+	limit    int
+	duration time.Duration
+}
+
+func newPairingAttemptLimiter(limit int, duration time.Duration) *pairingAttemptLimiter {
+	return &pairingAttemptLimiter{windows: make(map[string]pairingAttemptWindow), limit: limit, duration: duration}
+}
+
+func (l *pairingAttemptLimiter) allow(key string, now time.Time) bool {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	window, exists := l.windows[key]
+	if !exists || now.Sub(window.started) >= l.duration {
+		l.windows[key] = pairingAttemptWindow{started: now, attempts: 1}
+		return true
+	}
+	if window.attempts >= l.limit {
+		return false
+	}
+	window.attempts++
+	l.windows[key] = window
+	return true
+}
+
+func (l *pairingAttemptLimiter) clear(key string) {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	delete(l.windows, key)
+}
+
+func companionClientKey(r *http.Request) string {
+	host, _, err := net.SplitHostPort(r.RemoteAddr)
+	if err == nil {
+		return host
+	}
+	return r.RemoteAddr
 }
 
 func preferredLANIP() string {
@@ -201,6 +248,7 @@ func (p companionPKI) registerBootstrap(mux *http.ServeMux) {
 func startCompanionHTTPS(frontendFS fs.FS, service *services.CompanionService, pki companionPKI) {
 	mux := http.NewServeMux()
 	files := http.FileServer(http.FS(frontendFS))
+	pairLimiter := newPairingAttemptLimiter(10, time.Minute)
 	mux.HandleFunc("/companion/", func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path != "/companion/" {
 			files.ServeHTTP(w, r)
@@ -223,6 +271,12 @@ func startCompanionHTTPS(frontendFS fs.FS, service *services.CompanionService, p
 			http.Error(w, "method not allowed", 405)
 			return
 		}
+		clientKey := companionClientKey(r)
+		if !pairLimiter.allow(clientKey, time.Now()) {
+			w.Header().Set("Retry-After", "60")
+			http.Error(w, "too many pairing attempts; wait one minute", http.StatusTooManyRequests)
+			return
+		}
 		var req struct {
 			Token string `json:"token"`
 			Name  string `json:"name"`
@@ -236,6 +290,7 @@ func startCompanionHTTPS(frontendFS fs.FS, service *services.CompanionService, p
 			writeCompanionError(w, err, http.StatusUnauthorized)
 			return
 		}
+		pairLimiter.clear(clientKey)
 		http.SetCookie(w, &http.Cookie{Name: "race_companion", Value: token, Path: "/", Secure: true, HttpOnly: true, SameSite: http.SameSiteStrictMode, MaxAge: 86400})
 		writeJSON(w, state)
 	})

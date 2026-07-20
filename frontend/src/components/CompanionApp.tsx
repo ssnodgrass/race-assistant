@@ -1,5 +1,7 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import jsQR from 'jsqr';
 import { Calibration, correctCapture, formatElapsedHundredths, selectCalibration } from '../utils/companionClock';
+import { pairingCredentialFrom } from '../utils/companionPairing';
 import './CompanionApp.css';
 import './CompanionQueue.css';
 
@@ -17,6 +19,69 @@ const ROLE_KEY = 'companion-held-role';
 
 function storedState():State|null { try{return JSON.parse(localStorage.getItem(STATE_KEY)||'null')}catch{return null} }
 function storedRole():Role|null { const role=localStorage.getItem(ROLE_KEY);return role==='start'||role==='timer'||role==='bib'?role:null }
+
+function PairingScanner({onScan,onClose}:{onScan:(value:string)=>void;onClose:()=>void}) {
+  const videoRef=useRef<HTMLVideoElement>(null);
+  const canvasRef=useRef<HTMLCanvasElement>(null);
+  const [error,setError]=useState('Starting camera…');
+
+  useEffect(()=>{
+    let stream:MediaStream|undefined;
+    let frame=0;
+    let finished=false;
+    let lastScan=0;
+    const stop=()=>{finished=true;if(frame)cancelAnimationFrame(frame);stream?.getTracks().forEach(track=>track.stop())};
+    const scan=(timestamp:number)=>{
+      if(finished)return;
+      const video=videoRef.current;
+      const canvas=canvasRef.current;
+      if(video&&canvas&&video.readyState>=HTMLMediaElement.HAVE_CURRENT_DATA&&timestamp-lastScan>=140){
+        lastScan=timestamp;
+        const scale=Math.min(1,720/video.videoWidth);
+        canvas.width=Math.max(1,Math.round(video.videoWidth*scale));
+        canvas.height=Math.max(1,Math.round(video.videoHeight*scale));
+        const context=canvas.getContext('2d',{willReadFrequently:true});
+        if(context){
+          context.drawImage(video,0,0,canvas.width,canvas.height);
+          const pixels=context.getImageData(0,0,canvas.width,canvas.height);
+          const result=jsQR(pixels.data,pixels.width,pixels.height,{inversionAttempts:'dontInvert'});
+          if(result){
+            try{onScan(result.data);stop();return}catch(e){setError(String(e).replace(/^Error:\s*/,''))}
+          }
+        }
+      }
+      frame=requestAnimationFrame(scan);
+    };
+    const start=async()=>{
+      if(!navigator.mediaDevices?.getUserMedia){setError('Camera scanning is not supported here. Enter the pairing code instead.');return}
+      try{
+        stream=await navigator.mediaDevices.getUserMedia({audio:false,video:{facingMode:{ideal:'environment'},width:{ideal:1280},height:{ideal:720}}});
+        if(finished){stream.getTracks().forEach(track=>track.stop());return}
+        const video=videoRef.current;
+        if(!video)return;
+        video.srcObject=stream;
+        await video.play();
+        setError('Point the camera at the pairing QR on the laptop.');
+        frame=requestAnimationFrame(scan);
+      }catch(e){
+        const denied=(e as DOMException).name==='NotAllowedError';
+        setError(denied?'Camera permission was denied. Allow camera access or enter the pairing code.':'The camera could not start. Enter the pairing code instead.');
+      }
+    };
+    void start();
+    return stop;
+  },[onScan]);
+
+  return <div className="pair-scanner" role="dialog" aria-modal="true" aria-label="Scan pairing QR">
+    <div className="pair-scanner-panel">
+      <h2>Scan Pairing QR</h2>
+      <div className="pair-video-wrap"><video ref={videoRef} muted playsInline autoPlay/><div className="pair-scan-target"/></div>
+      <canvas ref={canvasRef} hidden/>
+      <p className="pair-help">{error}</p>
+      <button onClick={onClose}>Cancel Camera</button>
+    </div>
+  </div>;
+}
 
 function LocalQueue({entries,currentSessionID,paired,onClose,onDelete,onClear}:{entries:Entry[];currentSessionID?:string;paired:boolean;onClose:()=>void;onDelete:(entry:Entry)=>void;onClear:(scope:'older'|'all')=>void}) {
   const olderCount=entries.filter(entry=>entry.session_id!==currentSessionID).length;
@@ -55,7 +120,10 @@ export function CompanionApp() {
   const [state,setState]=useState<State|null>(storedState);
   const [paired,setPaired]=useState<boolean|null>(()=>localStorage.getItem(PAIRED_KEY)==='true'?true:null);
   const [name,setName]=useState(localStorage.getItem('companion-name')||'Race phone');
-  const [pairToken]=useState(new URLSearchParams(location.hash.slice(1)).get('pair')||'');
+  const [pairCredential,setPairCredential]=useState(new URLSearchParams(location.hash.slice(1)).get('pair')||'');
+  const [pairCode,setPairCode]=useState('');
+  const [scannerOpen,setScannerOpen]=useState(false);
+  const [pairingBusy,setPairingBusy]=useState(false);
   const [active,setActive]=useState<Role>(()=>storedRole()||'timer');
   const [heldRole,setHeldRole]=useState<Role|null>(storedRole);
   const [cal,setCal]=useState<Calibration|null>(()=>{try{return JSON.parse(localStorage.getItem('companion-calibration')||'null')}catch{return null}});
@@ -141,7 +209,8 @@ export function CompanionApp() {
   useEffect(()=>{const timer=setInterval(()=>setTick(Date.now()),50);return()=>clearInterval(timer)},[]);
   useEffect(()=>{if(!heldRole||!('wakeLock'in navigator))return;let lock:any;(navigator as any).wakeLock.request('screen').then((v:any)=>lock=v).catch(()=>{});return()=>lock?.release()},[heldRole]);
 
-  const pair=async()=>{try{const data=await api('/api/companion/pair',{method:'POST',body:JSON.stringify({token:pairToken,name})});localStorage.setItem('companion-name',name);acceptState(data);setMessage('PAIRED');await refreshPending();await calibrate()}catch(e){setMessage(String(e))}};
+  const acceptPairingScan=useCallback((value:string)=>{const credential=pairingCredentialFrom(value);setPairCredential(credential);setPairCode('');setScannerOpen(false);setMessage('PAIRING QR SCANNED · NAME THIS DEVICE AND PAIR')},[]);
+  const pair=async(credential=pairCredential||pairCode)=>{if(pairingBusy)return;try{setPairingBusy(true);setMessage('PAIRING…');const data=await api('/api/companion/pair',{method:'POST',body:JSON.stringify({token:pairingCredentialFrom(credential),name})});localStorage.setItem('companion-name',name);acceptState(data);setMessage('PAIRED');await refreshPending();await calibrate()}catch(e){setMessage(String(e).replace(/^Error:\s*/,''))}finally{setPairingBusy(false)}};
   const acquire=async(role:Role)=>{try{await api(`/api/companion/role/${role}`,{method:'PUT'});localStorage.setItem(ROLE_KEY,role);setHeldRole(role);setActive(role);if(role==='start'){setArmed(false);setMessage('START RESERVED · CALIBRATING…');try{await calibrate();setMessage('START READY · SAFE TO LEAVE WI-FI')}catch{setOnline(false);setMessage('START RESERVED · RECONNECT TO CALIBRATE')}}else setMessage(`${role.toUpperCase()} READY`)}catch(e){setMessage(String(e))}};
   const release=async()=>{if(!heldRole||pending)return;await api(`/api/companion/role/${heldRole}`,{method:'DELETE'});localStorage.removeItem(ROLE_KEY);setHeldRole(null);setArmed(false);setMessage('ROLE RELEASED')};
 
@@ -173,7 +242,28 @@ export function CompanionApp() {
   if(paired===null)return <div className="companion-shell companion-center">Connecting…</div>;
   const queuePanel=queueOpen?<LocalQueue entries={queuedEntries} currentSessionID={state?.session?.id} paired={paired===true} onClose={()=>setQueueOpen(false)} onDelete={deleteQueuedEntry} onClear={clearQueuedEntries}/>:null;
 
-  if(!paired)return <div className="companion-shell companion-center"><div className="companion-card"><h1>Race Assistant</h1>{pairToken?<><p>Name this phone before pairing.</p><input value={name} onChange={e=>setName(e.target.value)} /><button onClick={pair}>Pair This Phone</button></>:<p>Scan a current pairing QR on the race laptop.</p>}{pending+orphaned>0&&<><p className="companion-message warning">{pending+orphaned} unsent entries remain safely stored on this phone.</p><button onClick={()=>setQueueOpen(true)}>Review Local Queue</button></>}<div className="companion-message">{message}</div></div>{queuePanel}</div>;
+  if(!paired)return <div className="companion-shell companion-center">
+    {scannerOpen&&<PairingScanner onScan={acceptPairingScan} onClose={()=>setScannerOpen(false)}/>}
+    <div className="companion-card pairing-card">
+      <h1>Race Assistant</h1>
+      <p>Pair this browser or installed app with the current race session.</p>
+      <label className="pair-label">DEVICE NAME<input value={name} onChange={e=>setName(e.target.value)} autoComplete="off"/></label>
+      {pairCredential?<>
+        <div className="pair-ready">✓ Pairing QR ready</div>
+        <button disabled={pairingBusy} onClick={()=>pair()}>{pairingBusy?'Pairing…':'Pair This Device'}</button>
+        <button className="pair-secondary" disabled={pairingBusy} onClick={()=>{setPairCredential('');setMessage('')}}>Use a different pairing method</button>
+      </>:<>
+        <button className="pair-camera" onClick={()=>{setMessage('');setScannerOpen(true)}}>Scan Pairing QR with Camera</button>
+        <div className="pair-divider"><span>OR</span></div>
+        <form onSubmit={event=>{event.preventDefault();void pair(pairCode)}}>
+          <label className="pair-label">ONE-TIME NUMERIC CODE<input className="pair-code" inputMode="numeric" pattern="[0-9]*" maxLength={8} placeholder="00000000" value={pairCode} onChange={event=>setPairCode(event.target.value.replace(/\D/g,'').slice(0,8))} autoComplete="one-time-code"/></label>
+          <button disabled={pairingBusy||pairCode.length<6}>{pairingBusy?'Pairing…':'Pair with Code'}</button>
+        </form>
+      </>}
+      {pending+orphaned>0&&<><p className="companion-message warning">{pending+orphaned} unsent entries remain safely stored on this phone.</p><button onClick={()=>setQueueOpen(true)}>Review Local Queue</button></>}
+      <div className="companion-message">{message}</div>
+    </div>{queuePanel}
+  </div>;
 
   return <div className={`companion-shell ${online?'is-online':'is-offline'}`} style={{height:'100dvh',overflow:'hidden'}}>
     {queuePanel}

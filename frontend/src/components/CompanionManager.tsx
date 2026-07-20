@@ -75,10 +75,14 @@ export function CompanionManager({ race, events, onRaceRefresh }: Props) {
       <div className="card" style={{ margin: 0, opacity: state?.session ? 1 : .55 }}>
         <h2>2. Pair a phone</h2>
         {!state?.session ? <p>Start a session before pairing phones.</p> : <>
-          <button onClick={createPairing} style={{ width: '100%' }}>Generate one-time QR</button>
+          <button onClick={createPairing} style={{ width: '100%' }}>Generate pairing QR and code</button>
           {pairing && <>
             <div style={{ background: 'white', padding: 14, width: 'fit-content', margin: '18px auto' }}><QRCodeSVG value={pairing.url} size={220} level="M" marginSize={2}/></div>
-            <p className="text-dim" style={{ textAlign: 'center' }}>Single use · expires {new Date(pairing.expires_at_unix_ms).toLocaleTimeString()}</p>
+            <div style={{ textAlign: 'center' }}>
+              <div className="text-dim" style={{ fontSize: '.8rem', fontWeight: 700, letterSpacing: '.08em' }}>OR ENTER THIS ONE-TIME CODE</div>
+              <div style={{ font: '800 2.4rem monospace', letterSpacing: '.2em', margin: '8px 0' }}>{pairing.code}</div>
+              <p className="text-dim">QR and code are single use · expires {new Date(pairing.expires_at_unix_ms).toLocaleTimeString()}</p>
+            </div>
           </>}
         </>}
       </div>

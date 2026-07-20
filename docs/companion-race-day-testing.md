@@ -9,10 +9,23 @@ The companion is designed for one common finish chute shared by events with a si
 3. Verify the certificate fingerprint on the phone matches the laptop.
 4. On iPhone, install the downloaded profile, then open **Settings → General → About → Certificate Trust Settings** and enable full trust for Race Assistant.
 5. On Android, install the downloaded CA certificate through the device security/credential settings.
-6. Return to Phone Companion, select the recording scope, start the session, generate a one-time pairing QR, and scan it.
-7. Add the companion to the phone home screen. Repeat pairing with a fresh QR for every additional phone.
+6. Open the companion page and add it to the phone home screen. Launch the installed app.
+7. Return to Phone Companion on the laptop, select the recording scope, start the session, and generate a pairing QR and numeric code.
+8. In the installed app, choose **Scan Pairing QR with Camera**, allow camera access, and scan the laptop screen. Alternatively, enter the eight-digit code.
+9. Repeat pairing with a fresh QR or code for every additional phone or browser.
 
 Only the public CA certificate is downloaded. The CA private key remains in the laptop's Race Assistant configuration directory. Resetting that CA requires repeating phone trust setup.
+
+The in-app camera uses the same secure browser camera API on iOS and Android, but permission screens and camera selection are controlled by each operating system. If camera access is denied or unavailable, use the numeric code. A pairing QR opened in Firefox, Safari, or the system Camera app does not pair an already-installed PWA because each app has its own browser storage.
+
+## Pairing-method test
+
+1. Install the unpaired companion on the phone home screen and launch it.
+2. Generate a pairing grant on the laptop and confirm an eight-digit numeric code appears below the QR.
+3. Tap **Scan Pairing QR with Camera**, grant permission, and confirm the rear camera loads the credential without leaving the PWA. Tap **Pair This Device** to finish.
+4. Generate another pairing grant for a second browser, type its numeric code, and confirm it pairs.
+5. Confirm reusing the QR after its code was used—or reusing the code after its QR was used—is rejected.
+6. Enter incorrect codes repeatedly and confirm the server temporarily rate-limits pairing after ten attempts.
 
 ## Test fixture
 

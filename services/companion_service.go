@@ -8,6 +8,7 @@ import (
 	"encoding/hex"
 	"errors"
 	"fmt"
+	"math/big"
 	"strconv"
 	"strings"
 	"sync"
@@ -23,6 +24,7 @@ var (
 )
 
 type pairingGrant struct {
+	ID        string
 	SessionID string
 	ExpiresAt int64
 }
@@ -67,6 +69,15 @@ func randomToken(bytes int) (string, error) {
 		return "", err
 	}
 	return hex.EncodeToString(b), nil
+}
+
+func randomNumericCode(digits int) (string, error) {
+	limit := new(big.Int).Exp(big.NewInt(10), big.NewInt(int64(digits)), nil)
+	value, err := rand.Int(rand.Reader, limit)
+	if err != nil {
+		return "", err
+	}
+	return fmt.Sprintf("%0*d", digits, value), nil
 }
 
 func hashToken(token string) string {
@@ -155,10 +166,38 @@ func (s *CompanionService) CreatePairing(sessionID string) (models.CompanionPair
 	if err != nil {
 		return models.CompanionPairing{}, err
 	}
+	grantID, err := randomToken(12)
+	if err != nil {
+		return models.CompanionPairing{}, err
+	}
+	var code string
+	for attempts := 0; attempts < 10; attempts++ {
+		code, err = randomNumericCode(8)
+		if err != nil {
+			return models.CompanionPairing{}, err
+		}
+		if _, exists := s.pairings[hashToken(code)]; !exists {
+			break
+		}
+		code = ""
+	}
+	if code == "" {
+		return models.CompanionPairing{}, fmt.Errorf("could not allocate a pairing code")
+	}
 	expires := time.Now().Add(5 * time.Minute).UnixMilli()
-	s.pairings[hashToken(token)] = pairingGrant{SessionID: sessionID, ExpiresAt: expires}
+	grant := pairingGrant{ID: grantID, SessionID: sessionID, ExpiresAt: expires}
+	s.pairings[hashToken(token)] = grant
+	s.pairings[hashToken(code)] = grant
 	url := strings.TrimRight(s.setup.HTTPSURL, "/") + "/companion/#pair=" + token
-	return models.CompanionPairing{Token: token, URL: url, ExpiresAt: expires}, nil
+	return models.CompanionPairing{Token: token, Code: code, URL: url, ExpiresAt: expires}, nil
+}
+
+func (s *CompanionService) deletePairingGrantLocked(grant pairingGrant) {
+	for key, candidate := range s.pairings {
+		if candidate.ID == grant.ID {
+			delete(s.pairings, key)
+		}
+	}
 }
 
 func (s *CompanionService) Pair(token, name string) (string, models.CompanionState, error) {
@@ -167,8 +206,12 @@ func (s *CompanionService) Pair(token, name string) (string, models.CompanionSta
 	if s.db == nil {
 		return "", models.CompanionState{}, ErrCompanionUnavailable
 	}
-	grant, ok := s.pairings[hashToken(token)]
+	credential := strings.TrimSpace(token)
+	grant, ok := s.pairings[hashToken(credential)]
 	if !ok || grant.ExpiresAt < time.Now().UnixMilli() {
+		if ok {
+			s.deletePairingGrantLocked(grant)
+		}
 		return "", models.CompanionState{}, fmt.Errorf("pairing code is invalid or expired")
 	}
 	var active int
@@ -177,10 +220,10 @@ func (s *CompanionService) Pair(token, name string) (string, models.CompanionSta
 		return "", models.CompanionState{}, err
 	}
 	if active == 0 {
-		delete(s.pairings, hashToken(token))
+		s.deletePairingGrantLocked(grant)
 		return "", models.CompanionState{}, fmt.Errorf("companion session is no longer active")
 	}
-	delete(s.pairings, hashToken(token))
+	s.deletePairingGrantLocked(grant)
 	if strings.TrimSpace(name) == "" {
 		name = "Companion phone"
 	}

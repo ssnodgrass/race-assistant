@@ -1,4 +1,4 @@
-const CACHE='race-companion-v3';
+const CACHE='race-companion-v4';
 const SHELL=['/companion.webmanifest','/companion-icon.svg'];
 self.addEventListener('install',event=>event.waitUntil((async()=>{
   const cache=await caches.open(CACHE);

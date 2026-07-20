@@ -5,7 +5,7 @@ The Phone Companion is a local-only PWA served by the Race Assistant laptop. It 
 ## Data flow
 
 1. The desktop creates a 24-hour companion session for a race and a selected recording scope: one event or event `0` for the existing common chute across all events.
-2. A phone installs the laptop's local CA once, then scans a single-use pairing URL that expires after five minutes.
+2. A phone installs the laptop's local CA once, then pairs inside the installed PWA or browser by scanning a single-use QR with its camera or entering the associated eight-digit code. Both credentials expire after five minutes, and using either invalidates both.
 3. The server stores only a SHA-256 hash of the phone's random bearer token. The browser receives the token in a Secure, HttpOnly, SameSite cookie.
 4. A paired phone acquires one exclusive role: official start, finish timer, or bib chute.
 5. Every tap is captured against a calibrated laptop clock and first written to the phone's IndexedDB outbox.
@@ -46,6 +46,7 @@ Calibration expires after 30 minutes, and the server rejects captures over 100 m
 - Common-chute mode refuses to start when non-empty bibs are duplicated within a race.
 - Only one device may hold each role, and one device may hold only one role at a time.
 - Pairing links are single use and cannot outlive their session.
+- Numeric pairing attempts are rate-limited per client address. The PWA accepts only pairing QR codes for its current HTTPS origin, so a QR from another laptop address cannot silently redirect it.
 - Device revocation immediately rejects new writes without deleting the phone's outbox.
 - Duplicate, unknown, and placeholder bibs advance the chute with visible warnings rather than silently shifting later runners.
 - A numbered `PH:` placeholder represents a real runner who received a finish stick and can be reconciled later. An **Excluded Finish** uses a unique internal `GP:` marker, consumes its matching chute position, and is intentionally omitted from participant results and awards.

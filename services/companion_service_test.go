@@ -309,3 +309,39 @@ func TestCompanionPairingCannotOutliveItsSession(t *testing.T) {
 		t.Fatal("pairing succeeded after its session was stopped")
 	}
 }
+
+func TestCompanionNumericPairingCodeIsEightDigitsAndSingleUse(t *testing.T) {
+	service, _, race, _, _ := setupCompanionTest(t)
+	session, err := service.StartSession(race.ID, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	pairing, err := service.CreatePairing(session.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(pairing.Code) != 8 {
+		t.Fatalf("expected an eight-digit code, got %q", pairing.Code)
+	}
+	for _, digit := range pairing.Code {
+		if digit < '0' || digit > '9' {
+			t.Fatalf("pairing code is not numeric: %q", pairing.Code)
+		}
+	}
+	if _, state, err := service.Pair(pairing.Code, "Code phone"); err != nil || state.Session == nil || state.Session.ID != session.ID {
+		t.Fatalf("numeric pairing failed: state=%+v err=%v", state, err)
+	}
+	if _, _, err := service.Pair(pairing.Token, "QR reuse"); err == nil {
+		t.Fatal("QR token remained usable after its matching numeric code was consumed")
+	}
+	pairing, err = service.CreatePairing(session.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, _, err = service.Pair(pairing.Token, "QR phone"); err != nil {
+		t.Fatalf("QR pairing failed: %v", err)
+	}
+	if _, _, err = service.Pair(pairing.Code, "Code reuse"); err == nil {
+		t.Fatal("numeric code remained usable after its matching QR token was consumed")
+	}
+}

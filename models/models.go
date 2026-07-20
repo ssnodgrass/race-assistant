@@ -121,6 +121,7 @@ type CompanionState struct {
 
 type CompanionPairing struct {
 	Token     string `json:"token"`
+	Code      string `json:"code"`
 	URL       string `json:"url"`
 	ExpiresAt int64  `json:"expires_at_unix_ms"`
 }
