@@ -554,6 +554,9 @@ func (s *CompanionService) submitLocked(id companionIdentity, entry models.Compa
 			rows.Close()
 			bib = fmt.Sprintf("PH:%d", n+1)
 			ack.Warning = "placeholder"
+		} else if bib == "__GENERIC__" {
+			bib = "GP:" + entry.RequestID
+			ack.Warning = "excluded finish — not included in results"
 		} else {
 			var original int
 			err := tx.QueryRow("SELECT place FROM chute_assignments WHERE race_id=? AND bib_number=? AND bib_number NOT LIKE 'DUP:%' LIMIT 1", id.Session.RaceID, bib).Scan(&original)
@@ -570,7 +573,7 @@ func (s *CompanionService) submitLocked(id companionIdentity, entry models.Compa
 		if err == nil {
 			ack.ParticipantName = strings.TrimSpace(first + " " + last)
 			ack.EventName = event
-		} else if err == sql.ErrNoRows && ack.Warning == "" && !strings.HasPrefix(bib, "PH:") {
+		} else if err == sql.ErrNoRows && ack.Warning == "" && !strings.HasPrefix(bib, "PH:") && !strings.HasPrefix(bib, "GP:") {
 			ack.Warning = "unknown bib"
 		} else if err != nil && err != sql.ErrNoRows {
 			return ack, err

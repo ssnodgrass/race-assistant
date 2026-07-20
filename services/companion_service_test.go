@@ -217,6 +217,57 @@ func TestCompanionIdempotencyWarningsPlaceholdersAndUndo(t *testing.T) {
 	}
 }
 
+func TestCompanionGenericPlaceholderBalancesChuteWithoutResult(t *testing.T) {
+	service, timing, race, event, _ := setupCompanionTest(t)
+	session, err := service.StartSession(race.ID, event.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	token := pairCompanion(t, service, session.ID, "Bib")
+	if err = service.AcquireRole(token, "bib"); err != nil {
+		t.Fatal(err)
+	}
+	timerToken := pairCompanion(t, service, session.ID, "Timer")
+	if err = service.AcquireRole(timerToken, "timer"); err != nil {
+		t.Fatal(err)
+	}
+	start := time.Now().Add(-time.Minute).Truncate(time.Millisecond)
+	if _, err = service.db.Exec("UPDATE races SET start_time=? WHERE id=?", start, race.ID); err != nil {
+		t.Fatal(err)
+	}
+	if _, err = service.Submit(timerToken, []models.CompanionEntry{companionEntry("generic-time", "time", "", time.Now().UnixMilli())}); err != nil {
+		t.Fatal(err)
+	}
+	acks, err := service.Submit(token, []models.CompanionEntry{companionEntry("generic-finish", "bib", "__GENERIC__", time.Now().UnixMilli())})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if acks[0].Place != 1 || !strings.HasPrefix(acks[0].BibNumber, "GP:") || !strings.Contains(acks[0].Warning, "not included") {
+		t.Fatalf("unexpected generic placeholder acknowledgement: %+v", acks[0])
+	}
+	var stored string
+	if err = service.db.QueryRow("SELECT bib_number FROM chute_assignments WHERE race_id=? AND event_id=?", race.ID, event.ID).Scan(&stored); err != nil {
+		t.Fatal(err)
+	}
+	if !strings.HasPrefix(stored, "GP:") {
+		t.Fatalf("generic marker was not stored: %q", stored)
+	}
+	state, err := service.GetState(session.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if state.TimeCount != 1 || state.BibCount != 1 || state.TimeCount-state.BibCount != 0 {
+		t.Fatalf("generic finish did not balance the streams: %+v", state)
+	}
+	results, err := timing.GetEventResults(event.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(results) != 0 {
+		t.Fatalf("generic placeholder leaked into results: %+v", results)
+	}
+}
+
 func TestCompanionRoleIsExclusive(t *testing.T) {
 	service, _, race, _, _ := setupCompanionTest(t)
 	session, _ := service.StartSession(race.ID, 0)

@@ -48,6 +48,7 @@ Calibration expires after 30 minutes, and the server rejects captures over 100 m
 - Pairing links are single use and cannot outlive their session.
 - Device revocation immediately rejects new writes without deleting the phone's outbox.
 - Duplicate, unknown, and placeholder bibs advance the chute with visible warnings rather than silently shifting later runners.
+- A numbered `PH:` placeholder represents a real runner who received a finish stick and can be reconciled later. An **Excluded Finish** uses a unique internal `GP:` marker, consumes its matching chute position, and is intentionally omitted from participant results and awards.
 - Undo is limited to the submitting device's latest tail entry, so it cannot create a place gap.
 - Captures that precede the official start or are implausibly in the future are rejected for clock review.
 

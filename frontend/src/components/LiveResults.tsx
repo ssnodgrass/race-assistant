@@ -15,6 +15,7 @@ export const LiveResults: React.FC<LiveResultsProps> = ({ events, selectedRace, 
   const [categories, setCategories] = useState<AwardCategory[]>([]);
   const [lastFinishers, setLastFinishers] = useState<Result[]>([]);
   const [elapsed, setElapsed] = useState('00:00:00');
+  const [resultSearch, setResultSearch] = useState('');
 
   useEffect(() => {
     if (events.length > 0 && (selectedID === 0 || !events.some(e => e.id === selectedID))) {
@@ -62,13 +63,13 @@ export const LiveResults: React.FC<LiveResultsProps> = ({ events, selectedRace, 
             const resultsRes = await fetch(`/api/results?eventID=${selectedID}`);
             const data = await resultsRes.json();
             const latest = [...(data || [])].sort((a, b) => b.chute_place - a.chute_place);
-            setLastFinishers(latest.slice(0, 10));
+            setLastFinishers(latest);
         } catch (e) { console.error(e); }
     } else {
         AwardService.GetAwards(selectedID).then(setCategories).catch(console.error);
         TimingService.GetEventResults(selectedID).then(data => {
             const latest = [...(data || [])].sort((a, b) => b.chute_place - a.chute_place);
-            setLastFinishers(latest.slice(0, 10));
+            setLastFinishers(latest);
         }).catch(console.error);
     }
   };
@@ -78,6 +79,14 @@ export const LiveResults: React.FC<LiveResultsProps> = ({ events, selectedRace, 
     if (r.unofficial_time) return `~${r.unofficial_time}`;
     return '--:--.--';
   };
+
+  const normalizedSearch = resultSearch.trim().toLowerCase();
+  const visibleFinishers = normalizedSearch
+    ? lastFinishers.filter(r =>
+        `${r.first_name} ${r.last_name}`.toLowerCase().includes(normalizedSearch) ||
+        r.bib_number.toLowerCase().includes(normalizedSearch)
+      )
+    : lastFinishers.slice(0, 10);
 
   if (events.length === 0) return <div style={{ textAlign: 'center', marginTop: '100px' }}><h2>Loading Race Events...</h2></div>;
 
@@ -94,6 +103,14 @@ export const LiveResults: React.FC<LiveResultsProps> = ({ events, selectedRace, 
             <div style={{ marginTop: 4, color: 'var(--text-dim)', fontSize: '0.95rem' }}>Times prefixed with ~ are approximate chute captures pending a finish-line time.</div>
         </div>
         <div className="flex-row">
+            <input
+                type="search"
+                value={resultSearch}
+                onChange={e => setResultSearch(e.target.value)}
+                placeholder="Search name or bib"
+                aria-label="Search live results by name or bib number"
+                style={{ fontSize: '1.2rem', padding: '12px 16px', minWidth: '240px' }}
+            />
             <span style={{ fontSize: '1.5rem', fontWeight: 600 }}>EVENT:</span>
             <select 
                 value={selectedID} 
@@ -107,14 +124,16 @@ export const LiveResults: React.FC<LiveResultsProps> = ({ events, selectedRace, 
 
       <div style={{ display: 'flex', gap: 'var(--space-xl)', flexGrow: 1, overflow: 'hidden' }}>
         <div className="table-card" style={{ flex: 1, display: 'flex', flexDirection: 'column' }}>
-            <h2 style={{ padding: 'var(--space-md) var(--space-lg)', borderBottom: '1px solid var(--border)', color: 'var(--text-dim)', fontSize: '1.5rem', margin: 0 }}>Latest Finishers</h2>
+            <h2 style={{ padding: 'var(--space-md) var(--space-lg)', borderBottom: '1px solid var(--border)', color: 'var(--text-dim)', fontSize: '1.5rem', margin: 0 }}>
+                {normalizedSearch ? `Matching Finishers (${visibleFinishers.length})` : 'Latest Finishers'}
+            </h2>
             <div style={{ flexGrow: 1, overflowY: 'auto' }}>
                 <table style={{ fontSize: '1.8rem' }}>
                     <thead>
                         <tr><th>PLC</th><th>BIB</th><th>NAME</th><th style={{ textAlign: 'right' }}>TIME</th></tr>
                     </thead>
                     <tbody>
-                        {lastFinishers.map(r => (
+                        {visibleFinishers.map(r => (
                             <tr key={r.bib_number}>
                                 <td>{r.chute_place}</td>
                                 <td>{r.bib_number}</td>
@@ -122,6 +141,13 @@ export const LiveResults: React.FC<LiveResultsProps> = ({ events, selectedRace, 
                                 <td style={{ color: 'var(--accent)', textAlign: 'right', fontWeight: 800 }}>{getDisplayTime(r)}</td>
                             </tr>
                         ))}
+                        {normalizedSearch && visibleFinishers.length === 0 && (
+                            <tr>
+                                <td colSpan={4} style={{ padding: 'var(--space-xl)', textAlign: 'center', color: 'var(--text-dim)' }}>
+                                    No results match “{resultSearch.trim()}”.
+                                </td>
+                            </tr>
+                        )}
                     </tbody>
                 </table>
             </div>

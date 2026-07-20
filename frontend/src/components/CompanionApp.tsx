@@ -20,7 +20,7 @@ function storedRole():Role|null { const role=localStorage.getItem(ROLE_KEY);retu
 
 function LocalQueue({entries,currentSessionID,paired,onClose,onDelete,onClear}:{entries:Entry[];currentSessionID?:string;paired:boolean;onClose:()=>void;onDelete:(entry:Entry)=>void;onClear:(scope:'older'|'all')=>void}) {
   const olderCount=entries.filter(entry=>entry.session_id!==currentSessionID).length;
-  const kindLabel=(entry:Entry)=>entry.kind==='start'?'Official Start':entry.kind==='time'?'Finish Time':`Bib ${entry.bib_number||'?'}`;
+  const kindLabel=(entry:Entry)=>entry.kind==='start'?'Official Start':entry.kind==='time'?'Finish Time':entry.bib_number==='__GENERIC__'?'Excluded Finish':`Bib ${entry.bib_number||'?'}`;
   return <div className="queue-overlay" role="dialog" aria-modal="true" aria-label="Local queue">
     <div className="queue-panel">
       <div className="queue-heading"><div><h2>Local Queue</h2><p>{entries.length} unsent {entries.length===1?'entry':'entries'} stored on this phone</p></div><button onClick={onClose}>Close</button></div>
@@ -168,6 +168,7 @@ export function CompanionApp() {
 
   const elapsed=useMemo(()=>state?.race_start?formatElapsedHundredths(tick-new Date(state.race_start).getTime()):'WAITING FOR START',[state?.race_start,tick]);
   const visibleAck=lastAck&&((lastAck.kind==='time'?'timer':lastAck.kind)===active)?lastAck:null;
+  const visibleAckValue=visibleAck?.bib_number.startsWith('GP:')?'Excluded finish':visibleAck?.bib_number||visibleAck?.elapsed;
 
   if(paired===null)return <div className="companion-shell companion-center">Connecting…</div>;
   const queuePanel=queueOpen?<LocalQueue entries={queuedEntries} currentSessionID={state?.session?.id} paired={paired===true} onClose={()=>setQueueOpen(false)} onDelete={deleteQueuedEntry} onClear={clearQueuedEntries}/>:null;
@@ -185,9 +186,9 @@ export function CompanionApp() {
       active==='timer'?<section className="timer-screen" style={{flex:'1 0 auto'}}><div className="sequence">NEXT FINISH #{state?.next_time_place??1}{pending?` + ${pending} queued`:''}</div><button className="finish-button" onPointerDown={e=>{e.preventDefault();capture('time')}}>RECORD<br/>FINISH</button></section>:
       <section className="bib-screen" style={{flexShrink:0,margin:'0 auto'}}><div className="sequence">NEXT BIB POSITION #{state?.next_bib_place??1}</div><input className="bib-display" inputMode="text" autoCapitalize="characters" value={bib} onChange={e=>setBib(e.target.value.toUpperCase())} placeholder="BIB" onKeyDown={e=>{if(e.key==='Enter')submitBib()}}/>
         <div className="keypad">{['1','2','3','4','5','6','7','8','9','ABC','0','⌫'].map(k=><button key={k} onClick={()=>k==='⌫'?setBib(v=>v.slice(0,-1)):k==='ABC'?document.querySelector<HTMLInputElement>('.bib-display')?.focus():setBib(v=>v+k)}>{k}</button>)}</div>
-        <div className="bib-actions"><button onClick={()=>submitBib()} disabled={!bib}>Submit Bib</button><button className="placeholder" onClick={()=>capture('bib','?')}>No Bib / Placeholder</button></div>
+        <div className="bib-actions"><button onClick={()=>submitBib()} disabled={!bib}>Submit Bib</button><button className="placeholder" onClick={()=>capture('bib','?')}>No Bib / Numbered Stick</button><button style={{background:'#596273',gridColumn:'1 / -1'}} onClick={()=>capture('bib','__GENERIC__')}>Extra Finish / Exclude from Results</button></div>
       </section>}
-      {visibleAck&&<div className="last-ack" style={{width:'100%',flexShrink:0}}><strong>#{visibleAck.place} {visibleAck.bib_number||visibleAck.elapsed}</strong><span>{visibleAck.participant_name} {visibleAck.event_name}</span><button onClick={undo}>Undo last</button></div>}
+      {visibleAck&&<div className="last-ack" style={{width:'100%',flexShrink:0}}><strong>#{visibleAck.place} {visibleAckValue}</strong><span>{visibleAck.participant_name} {visibleAck.event_name}</span><button onClick={undo}>Undo last</button></div>}
     </main>
     <footer style={{flexShrink:0,paddingBottom:'max(16px, env(safe-area-inset-bottom))'}}><div className={`companion-message ${visibleAck?.warning?'warning':''}`}>{message||'READY'}</div>{pending+orphaned>0&&<div style={{display:'flex',alignItems:'center',justifyContent:'space-between',gap:8,marginTop:8,padding:'8px 10px',border:'1px solid #a66030',borderRadius:8,color:'#ffad42'}}><span>{pending} current · {orphaned} older queued</span><button style={{background:'#526173',padding:'8px 12px'}} onClick={()=>setQueueOpen(true)}>Review</button></div>}<button className="release" disabled={!heldRole||pending>0||active==='start'} onClick={release}>Release role</button></footer>
   </div>;

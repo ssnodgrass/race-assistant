@@ -16,6 +16,7 @@ export const AwardsView: React.FC<AwardsViewProps> = ({ events, mode = 'awards',
   const [categories, setCategories] = useState<AwardCategory[]>([]);
   const [fullResults, setFullResults] = useState<Result[]>([]);
   const [showFull, setShowFull] = useState(mode === 'standings');
+  const [resultSearch, setResultSearch] = useState('');
   const scrollRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -95,6 +96,14 @@ export const AwardsView: React.FC<AwardsViewProps> = ({ events, mode = 'awards',
     return '--:--.--';
   };
 
+  const normalizedSearch = resultSearch.trim().toLowerCase();
+  const visibleResults = normalizedSearch
+    ? fullResults.filter(r =>
+        `${r.first_name} ${r.last_name}`.toLowerCase().includes(normalizedSearch) ||
+        r.bib_number.toLowerCase().includes(normalizedSearch)
+      )
+    : fullResults;
+
   if (events.length === 0) return (
     <div className="card">Initializing Results...</div>
   );
@@ -121,6 +130,16 @@ export const AwardsView: React.FC<AwardsViewProps> = ({ events, mode = 'awards',
                 <option value="awards">Category Winners</option>
                 <option value="standings">Complete List</option>
             </select>
+            {showFull && (
+                <input
+                    type="search"
+                    value={resultSearch}
+                    onChange={e => setResultSearch(e.target.value)}
+                    placeholder="Search name or bib"
+                    aria-label="Search results by name or bib number"
+                    style={{ padding: '10px 12px', fontSize: (isExternal || isBrowser) ? '1.2rem' : '1rem', minWidth: '220px' }}
+                />
+            )}
         </div>
         {!isBrowser && !isExternal && (
             <div className="flex-row">
@@ -172,7 +191,7 @@ export const AwardsView: React.FC<AwardsViewProps> = ({ events, mode = 'awards',
                         </tr>
                     </thead>
                     <tbody>
-                        {(fullResults || []).map(r => (
+                        {visibleResults.map(r => (
                             <tr key={r.bib_number}>
                                 <td style={{ paddingLeft: 'var(--space-md)' }}>{r.event_place}</td>
                                 <td><strong>{r.bib_number}</strong></td>
@@ -182,6 +201,13 @@ export const AwardsView: React.FC<AwardsViewProps> = ({ events, mode = 'awards',
                                 <td style={{ fontWeight: 800, color: 'var(--accent)', textAlign: 'right', paddingRight: 'var(--space-md)' }}>{renderTime(r)}</td>
                             </tr>
                         ))}
+                        {normalizedSearch && visibleResults.length === 0 && (
+                            <tr>
+                                <td colSpan={6} style={{ padding: 'var(--space-xl)', textAlign: 'center', color: 'var(--text-dim)' }}>
+                                    No results match “{resultSearch.trim()}”.
+                                </td>
+                            </tr>
+                        )}
                     </tbody>
                 </table>
             </div>
