@@ -16,37 +16,50 @@ export const TimeEntry: React.FC<TimeEntryProps> = ({ raceID, events }) => {
   const [nextPlace, setNextPlace] = useState(1);
 
   const timeInputRef = useRef<HTMLInputElement>(null);
+  const editingIDRef = useRef<number | null>(null);
+  const formDirtyRef = useRef(false);
+  const pulseLoadInFlight = useRef(false);
 
   useEffect(() => {
-    if (events.length > 0 && !events.some(ev => ev.id === selectedEventID)) {
+    if (events.length > 0 && selectedEventID !== 0 && !events.some(ev => ev.id === selectedEventID)) {
       setSelectedEventID(events[0].id);
     }
   }, [events, selectedEventID]);
 
   useEffect(() => {
-    if (selectedEventID > 0) {
-      loadPulses();
-    }
+    editingIDRef.current = null;
+    formDirtyRef.current = false;
+    setEditingID(null);
+    setTimeValue('');
+    loadPulses();
+    const timer = setInterval(() => {
+      if (document.visibilityState === 'visible') loadPulses();
+    }, 1000);
+    return () => clearInterval(timer);
   }, [raceID, selectedEventID]);
 
-  const loadPulses = () => {
-    if (!selectedEventID) {
-      setPulses([]);
-      setNextPlace(1);
-      return;
-    }
-    TimingService.ListTimingPulsesByEvent(raceID, selectedEventID).then(data => {
+  const loadPulses = async () => {
+    if (pulseLoadInFlight.current) return;
+    pulseLoadInFlight.current = true;
+    try {
+      const data = await TimingService.ListTimingPulsesByEvent(raceID, selectedEventID);
         const sorted = [...(data || [])].sort((a, b) => a.place - b.place);
         setPulses(sorted);
         const next = (sorted.length > 0) ? Math.max(...sorted.map(d => d.place)) + 1 : 1;
         setNextPlace(next);
-        if (!editingID) {
+        if (!editingIDRef.current && !formDirtyRef.current) {
             setTargetPlace(next.toString());
         }
-    }).catch(console.error);
+    } catch (error) {
+      console.error(error);
+    } finally {
+      pulseLoadInFlight.current = false;
+    }
   };
 
   const handleSelect = (p: TimingPulse) => {
+    editingIDRef.current = p.id;
+    formDirtyRef.current = true;
     setEditingID(p.id);
     setTargetPlace(p.place.toString());
     setTimeValue(p.raw_time);
@@ -54,6 +67,8 @@ export const TimeEntry: React.FC<TimeEntryProps> = ({ raceID, events }) => {
   };
 
   const resetForm = () => {
+    editingIDRef.current = null;
+    formDirtyRef.current = false;
     setEditingID(null);
     setTargetPlace(nextPlace.toString());
     setTimeValue('');
@@ -69,6 +84,8 @@ export const TimeEntry: React.FC<TimeEntryProps> = ({ raceID, events }) => {
         if (pulse) {
             const updated = new TimingPulse({ ...pulse, event_id: selectedEventID, raw_time: timeValue, place: parseInt(targetPlace) });
             TimingService.UpdateTimingPulse(updated).then(() => {
+                editingIDRef.current = null;
+                formDirtyRef.current = false;
                 loadPulses();
                 resetForm();
             }).catch(console.error);
@@ -76,6 +93,7 @@ export const TimeEntry: React.FC<TimeEntryProps> = ({ raceID, events }) => {
     } else {
         TimingService.AddTimingPulseForEvent(raceID, selectedEventID, parseInt(targetPlace), timeValue)
           .then(() => {
+            formDirtyRef.current = false;
             loadPulses();
             setTimeValue('');
           })
@@ -93,9 +111,10 @@ export const TimeEntry: React.FC<TimeEntryProps> = ({ raceID, events }) => {
   };
 
   const handleDeleteAll = () => {
-    if (!selectedEventID) return;
     if (window.confirm("Delete all recorded times for the selected event?")) {
-      TimingService.DeleteAllTimingPulses(raceID, selectedEventID).then(() => {
+      TimingService.DeleteAllTimingPulsesForScope(raceID, selectedEventID).then(() => {
+        editingIDRef.current = null;
+        formDirtyRef.current = false;
         setEditingID(null);
         setTimeValue('');
         loadPulses();
@@ -106,6 +125,8 @@ export const TimeEntry: React.FC<TimeEntryProps> = ({ raceID, events }) => {
   const handleDeleteAllRace = () => {
     if (window.confirm("Delete all recorded times across all events for this race?")) {
       TimingService.DeleteAllTimingPulses(raceID, 0).then(() => {
+        editingIDRef.current = null;
+        formDirtyRef.current = false;
         setEditingID(null);
         setTimeValue('');
         loadPulses();
@@ -116,11 +137,12 @@ export const TimeEntry: React.FC<TimeEntryProps> = ({ raceID, events }) => {
   return (
     <div style={{ display: 'flex', flexDirection: 'column', height: '100%' }}>
       <div className="flex-between" style={{ marginBottom: 'var(--space-lg)' }}>
-        <h2>Manual Time Entry</h2>
+        <h2>Manual Finish-Time Entry</h2>
         <div className="flex-row">
           <div style={{ minWidth: '220px' }}>
             <label style={{ display: 'block', marginBottom: '4px', fontWeight: 600, fontSize: '0.75em', color: 'var(--text-dim)' }}>EVENT</label>
             <select value={selectedEventID} onChange={e => setSelectedEventID(Number(e.target.value))}>
+              <option value={0}>Common Chute — All Events</option>
               {events.map(ev => <option key={ev.id} value={ev.id}>{ev.name}</option>)}
             </select>
           </div>
@@ -134,7 +156,7 @@ export const TimeEntry: React.FC<TimeEntryProps> = ({ raceID, events }) => {
         <form onSubmit={handleSubmit} style={{ display: 'flex', gap: '20px', alignItems: 'flex-end' }}>
             <div style={{ width: '120px' }}>
                 <label style={{ display: 'block', marginBottom: '8px', fontWeight: 600, fontSize: '0.85em', color: 'var(--text-dim)' }}>SEQUENCE #</label>
-                <input type="number" value={targetPlace} onChange={e => setTargetPlace(e.target.value)} style={{ width: '100%' }} />
+                <input type="number" value={targetPlace} onChange={e => { formDirtyRef.current = true; setTargetPlace(e.target.value); }} style={{ width: '100%' }} />
             </div>
             <div style={{ flex: 1 }}>
                 <label style={{ display: 'block', marginBottom: '8px', fontWeight: 600, fontSize: '0.85em', color: 'var(--text-dim)' }}>TIME (HH:MM:SS.ms)</label>
@@ -142,7 +164,7 @@ export const TimeEntry: React.FC<TimeEntryProps> = ({ raceID, events }) => {
                     ref={timeInputRef}
                     placeholder="e.g. 00:18:24.000" 
                     value={timeValue} 
-                    onChange={e => setTimeValue(e.target.value)} 
+                    onChange={e => { formDirtyRef.current = true; setTimeValue(e.target.value); }}
                     style={{ width: '100%', fontSize: '1.2rem', fontFamily: 'monospace' }} 
                     autoFocus 
                 />
@@ -158,7 +180,7 @@ export const TimeEntry: React.FC<TimeEntryProps> = ({ raceID, events }) => {
                 <thead>
                     <tr>
                         <th style={{ paddingLeft: 'var(--space-lg)', width: '140px' }}>Sequence</th>
-                        <th>Recorded Time Value</th>
+                        <th>Finish Time (Official)</th>
                         <th style={{ textAlign: 'right', paddingRight: 'var(--space-lg)' }}>Actions</th>
                     </tr>
                 </thead>

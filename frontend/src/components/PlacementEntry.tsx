@@ -41,15 +41,19 @@ export const PlacementEntry: React.FC<PlacementEntryProps> = ({ race, participan
   const sidebarRef = useRef<HTMLDivElement>(null);
 
   const currentPlaceRef = useRef(place);
+  const nextPlaceRef = useRef(1);
+  const targetDirtyRef = useRef(false);
+  const placementLoadInFlight = useRef(false);
   useEffect(() => { currentPlaceRef.current = place; }, [place]);
 
   useEffect(() => {
-    if (events.length > 0 && !events.some(ev => ev.id === selectedEventID)) {
+    if (events.length > 0 && selectedEventID !== 0 && !events.some(ev => ev.id === selectedEventID)) {
       setSelectedEventID(events[0].id);
     }
   }, [events, selectedEventID]);
 
   useEffect(() => {
+    targetDirtyRef.current = false;
     loadPlacements();
 
     const handleGlobalClick = (e: MouseEvent) => {
@@ -73,7 +77,14 @@ export const PlacementEntry: React.FC<PlacementEntryProps> = ({ race, participan
         window.removeEventListener('mousedown', handleGlobalClick);
         window.removeEventListener('keydown', handleKeyDown);
     };
-  }, [race.id, selectedEventID, nextPlace]);
+  }, [race.id, selectedEventID]);
+
+  useEffect(() => {
+    const timer = setInterval(() => {
+      if (document.visibilityState === 'visible') loadPlacements();
+    }, 1000);
+    return () => clearInterval(timer);
+  }, [race.id, selectedEventID]);
 
   useEffect(() => {
     if (!race.start_time) {
@@ -87,19 +98,17 @@ export const PlacementEntry: React.FC<PlacementEntryProps> = ({ race, participan
         const h = Math.floor(diff / 3600000);
         const m = Math.floor((diff % 3600000) / 60000);
         const s = Math.floor((diff % 60000) / 1000);
-        setElapsed(`${h.toString().padStart(2, '0')}:${m.toString().padStart(2, '0')}:${s.toString().padStart(2, '0')}`);
-    }, 1000);
+        const cs = Math.floor((diff % 1000) / 10);
+        setElapsed(`${h.toString().padStart(2, '0')}:${m.toString().padStart(2, '0')}:${s.toString().padStart(2, '0')}.${cs.toString().padStart(2, '0')}`);
+    }, 50);
     return () => clearInterval(timer);
   }, [race.start_time]);
 
-  const loadPlacements = () => {
-    if (!selectedEventID) {
-        setPlacements([]);
-        setNextPlace(1);
-        setPlace('1');
-        return;
-    }
-    TimingService.ListPlacementsByEvent(race.id, selectedEventID).then(data => {
+  const loadPlacements = async () => {
+    if (placementLoadInFlight.current) return;
+    placementLoadInFlight.current = true;
+    try {
+      const data = await TimingService.ListPlacementsByEvent(race.id, selectedEventID);
         const sorted = data || [];
         setPlacements(sorted);
         const next = (sorted.length > 0) ? Math.max(...sorted.map(d => d.place)) + 1 : 1;
@@ -109,11 +118,17 @@ export const PlacementEntry: React.FC<PlacementEntryProps> = ({ race, participan
           .filter(n => !Number.isNaN(n));
         setNextPlaceholder(placeholderNumbers.length > 0 ? Math.max(...placeholderNumbers) + 1 : 1);
         setNextPlace(next);
-        setPlace(prev => (!prev || parseInt(prev) >= next - 1) ? next.toString() : prev);
-    }).catch(console.error);
+        nextPlaceRef.current = next;
+        if (!targetDirtyRef.current) setPlace(next.toString());
+    } catch (error) {
+      console.error(error);
+    } finally {
+      placementLoadInFlight.current = false;
+    }
   };
 
-  const resetTarget = () => setPlace(nextPlace.toString());
+  const selectPlace = (value: string) => { targetDirtyRef.current = true; setPlace(value); };
+  const resetTarget = () => { targetDirtyRef.current = false; setPlace(nextPlaceRef.current.toString()); };
   const duplicateMarkerFor = (value: string) => `DUP:${value}`;
   const isDuplicateMarker = (value: string) => value.startsWith('DUP:');
   const duplicateBibFromMarker = (value: string) => value.replace(/^DUP:/, '');
@@ -149,6 +164,7 @@ export const PlacementEntry: React.FC<PlacementEntryProps> = ({ race, participan
         await TimingService.AssignBibToPlaceWithTimeForEvent(race.id, selectedEventID, p, marker, unofficialTime);
         setDuplicateScan({ bib: normalizedBib, originalPlace: existingBibPlacement.place, duplicatePlace: p });
         setLastScanned({ place: p, bib: normalizedBib, name: `DUPLICATE - already at place ${existingBibPlacement.place}` });
+        targetDirtyRef.current = false;
         loadPlacements();
         setBib('');
         bibInputRef.current?.focus();
@@ -178,6 +194,7 @@ export const PlacementEntry: React.FC<PlacementEntryProps> = ({ race, participan
           const placeholderNumber = parseInt(placeholderNumberFromMarker(normalizedBib), 10);
           if (placeholderNumber >= nextPlaceholder) setNextPlaceholder(placeholderNumber + 1);
         }
+        targetDirtyRef.current = false;
         loadPlacements();
         setBib('');
         bibInputRef.current?.focus();
@@ -198,9 +215,8 @@ export const PlacementEntry: React.FC<PlacementEntryProps> = ({ race, participan
   };
 
   const handleDeleteAll = () => {
-    if (!selectedEventID) return;
     if (window.confirm("Delete all placements for the selected event?")) {
-      TimingService.DeleteAllPlacements(race.id, selectedEventID).then(() => {
+      TimingService.DeleteAllPlacementsForScope(race.id, selectedEventID).then(() => {
         setLastScanned(null);
         setBib('');
         loadPlacements();
@@ -218,7 +234,7 @@ export const PlacementEntry: React.FC<PlacementEntryProps> = ({ race, participan
     }
   };
 
-  const eventParticipants = participants.filter(p => p.event_id === selectedEventID);
+  const eventParticipants = selectedEventID === 0 ? participants : participants.filter(p => p.event_id === selectedEventID);
   const unassigned = eventParticipants.filter(p => !placements.some(pl => pl.bib_number === p.bib_number));
   const filteredUnassigned = unassigned.filter(p => 
     p.first_name.toLowerCase().includes(search.toLowerCase()) || 
@@ -239,7 +255,7 @@ export const PlacementEntry: React.FC<PlacementEntryProps> = ({ race, participan
             <h2>Placements</h2>
             {race.start_time && (
                 <div className="badge" style={{ backgroundColor: 'var(--bg-input)', border: '1px solid var(--border)', padding: '8px 16px', fontSize: '1.1rem', fontFamily: 'monospace', color: 'var(--success)' }}>
-                    CLOCK: {elapsed}
+                    REFERENCE: {elapsed}
                 </div>
             )}
         </div>
@@ -247,6 +263,7 @@ export const PlacementEntry: React.FC<PlacementEntryProps> = ({ race, participan
             <div style={{ minWidth: '220px' }}>
                 <label style={{ display: 'block', marginBottom: '4px', fontWeight: 600, fontSize: '0.75em', color: 'var(--text-dim)' }}>EVENT</label>
                 <select value={selectedEventID} onChange={e => setSelectedEventID(Number(e.target.value))}>
+                    <option value={0}>Common Chute — All Events</option>
                     {events.map(ev => <option key={ev.id} value={ev.id}>{ev.name}</option>)}
                 </select>
             </div>
@@ -270,7 +287,7 @@ export const PlacementEntry: React.FC<PlacementEntryProps> = ({ race, participan
                         <div style={{ width: '120px' }}>
                             <label style={{ display: 'block', marginBottom: '8px', fontWeight: 600, fontSize: '0.85em', color: 'var(--text-dim)' }}>TARGET PLACE</label>
                             <div className="flex-row" style={{ gap: '4px' }}>
-                                <input type="number" value={place} onChange={e => setPlace(e.target.value)} style={{ width: '100%' }} />
+                                <input type="number" value={place} onChange={e => selectPlace(e.target.value)} style={{ width: '100%' }} />
                                 {parseInt(place) !== nextPlace && ( <button type="button" onClick={resetTarget} style={{ padding: '8px', minWidth: '40px', backgroundColor: '#444' }}>↺</button> )}
                             </div>
                         </div>
@@ -324,7 +341,7 @@ export const PlacementEntry: React.FC<PlacementEntryProps> = ({ race, participan
                             <th style={{ paddingLeft: 'var(--space-lg)' }}>Place</th>
                             <th>Bib #</th>
                             <th>Participant</th>
-                            <th>Time</th>
+                            <th>Chute Time (Approx.)</th>
                             <th style={{ textAlign: 'right', paddingRight: 'var(--space-lg)' }}>Tools</th>
                         </tr>
                     </thead>
@@ -340,7 +357,7 @@ export const PlacementEntry: React.FC<PlacementEntryProps> = ({ race, participan
                                 : (isPlaceholderRow ? 'rgba(170, 102, 51, 0.14)' : (isTargeted ? 'rgba(0, 123, 255, 0.1)' : 'transparent'));
                             if (!p) {
                                 return (
-                                    <tr key={row.index} onClick={() => setPlace(row.index.toString())} style={{ backgroundColor: isTargeted ? 'rgba(244, 67, 54, 0.1)' : 'transparent', cursor: 'pointer' }}>
+                                    <tr key={row.index} onClick={() => selectPlace(row.index.toString())} style={{ backgroundColor: isTargeted ? 'rgba(244, 67, 54, 0.1)' : 'transparent', cursor: 'pointer' }}>
                                         <td style={{ paddingLeft: 'var(--space-lg)', color: 'var(--danger)', fontWeight: 700 }}>{isTargeted ? '👉 ' : ''}{row.index}</td>
                                         <td colSpan={3} style={{ color: 'var(--danger)' }}><em>--- EMPTY GAP ---</em></td>
                                         <td style={{ textAlign: 'right', paddingRight: 'var(--space-lg)' }}>
@@ -350,7 +367,7 @@ export const PlacementEntry: React.FC<PlacementEntryProps> = ({ race, participan
                                 );
                             }
                             return (
-                                <tr key={p.place} onClick={() => setPlace(p.place.toString())} style={{ backgroundColor: rowBackground, cursor: 'pointer' }}>
+                                <tr key={p.place} onClick={() => selectPlace(p.place.toString())} style={{ backgroundColor: rowBackground, cursor: 'pointer' }}>
                                     <td style={{ paddingLeft: 'var(--space-lg)' }}>{isTargeted ? '👉 ' : ''}{p.place}</td>
                                     <td>
                                         <strong>{isDuplicateScan ? duplicateBibFromMarker(p.bib_number) : (isPlaceholderMarker(p.bib_number) ? `Placeholder #${placeholderNumberFromMarker(p.bib_number)}` : p.bib_number)}</strong>

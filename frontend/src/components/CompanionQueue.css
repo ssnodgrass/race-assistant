@@ -1,0 +1,95 @@
+.queue-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 1000;
+  display: flex;
+  justify-content: center;
+  background: rgba(0, 0, 0, 0.82);
+  padding: max(12px, env(safe-area-inset-top)) 12px max(12px, env(safe-area-inset-bottom));
+  overflow-y: auto;
+}
+
+.queue-panel {
+  width: min(100%, 620px);
+  min-height: min-content;
+  margin: auto 0;
+  padding: 18px;
+  border: 1px solid #3b4655;
+  border-radius: 14px;
+  background: #111720;
+  color: #f5f7fb;
+}
+
+.queue-heading {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 12px;
+}
+
+.queue-heading h2,
+.queue-heading p {
+  margin: 0 0 6px;
+}
+
+.queue-safety {
+  margin: 12px 0;
+  padding: 10px;
+  border: 1px solid #a66030;
+  border-radius: 8px;
+  color: #ffbd67;
+  font-size: 0.9rem;
+}
+
+.queue-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  max-height: 55dvh;
+  overflow-y: auto;
+}
+
+.queue-entry {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 10px;
+  padding: 11px;
+  border-radius: 8px;
+  background: #1c2430;
+}
+
+.queue-entry span,
+.queue-entry small {
+  display: block;
+  margin-top: 3px;
+  color: #abb6c5;
+}
+
+.queue-entry small {
+  overflow-wrap: anywhere;
+}
+
+.queue-entry button,
+.queue-actions .danger {
+  background: #943c3c;
+}
+
+.queue-empty {
+  padding: 28px;
+  text-align: center;
+  color: #abb6c5;
+}
+
+.queue-actions {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+  margin-top: 12px;
+}
+
+@media (max-width: 480px) {
+  .queue-actions {
+    grid-template-columns: 1fr;
+  }
+}

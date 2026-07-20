@@ -59,6 +59,10 @@ func (s *TimingService) DeleteAllTimingPulses(raceID int, eventID int) error {
 	return s.repo.DeletePulses(raceID, eventID)
 }
 
+func (s *TimingService) DeleteAllTimingPulsesForScope(raceID int, eventID int) error {
+	return s.repo.DeletePulsesExact(raceID, eventID)
+}
+
 func (s *TimingService) GetBibAssignment(raceID int, bibNumber string) (int, error) {
 	return s.repo.GetBibAssignment(raceID, bibNumber)
 }
@@ -124,6 +128,10 @@ func (s *TimingService) DeletePlacementForEvent(raceID, eventID, place int) erro
 
 func (s *TimingService) DeleteAllPlacements(raceID, eventID int) error {
 	return s.repo.DeletePlacements(raceID, eventID)
+}
+
+func (s *TimingService) DeleteAllPlacementsForScope(raceID, eventID int) error {
+	return s.repo.DeletePlacementsExact(raceID, eventID)
 }
 
 func (s *TimingService) ListPlacementsByEvent(raceID, eventID int) ([]models.ChuteAssignment, error) {

@@ -14,6 +14,7 @@ import (
 	"github.com/pkg/browser"
 	"github.com/ssnodgrass/race-assistant/database"
 	"github.com/ssnodgrass/race-assistant/internal/repository"
+	"github.com/ssnodgrass/race-assistant/models"
 	"github.com/ssnodgrass/race-assistant/services"
 	"github.com/wailsapp/wails/v3/pkg/application"
 )
@@ -157,6 +158,7 @@ func main() {
 	stopwatchService := services.NewStopwatchService(timingRepo)
 	runSignUpService := services.NewRunSignUpService(nil)
 	settingsService := services.NewSettingsService(settingsRepo)
+	companionService := services.NewCompanionService()
 
 	dbService := &DatabaseService{
 		services: []serviceWithDB{
@@ -169,13 +171,30 @@ func main() {
 			stopwatchService,
 			runSignUpService,
 			settingsService,
+			companionService,
 		},
 	}
 
 	frontendFS, _ := fs.Sub(assets, "frontend/dist")
+	companionHost := preferredLANIP()
+	companionPKI, companionPKIErr := ensureCompanionPKI(companionHost)
+	if companionPKIErr != nil {
+		log.Printf("Companion PKI error: %v", companionPKIErr)
+		companionService.ConfigureServer(models.CompanionSetup{ServerError: companionPKIErr.Error()})
+	} else {
+		companionService.ConfigureServer(models.CompanionSetup{
+			HTTPSURL:      fmt.Sprintf("https://%s:8443", companionHost),
+			BootstrapURL:  fmt.Sprintf("http://%s:8080/companion-setup", companionHost),
+			CAFingerprint: companionPKI.caFingerprint,
+		})
+		startCompanionHTTPS(frontendFS, companionService, companionPKI)
+	}
 
 	go func() {
 		mux := http.NewServeMux()
+		if companionPKIErr == nil {
+			companionPKI.registerBootstrap(mux)
+		}
 		mux.Handle("/", http.FileServer(http.FS(frontendFS)))
 		mux.HandleFunc("/api/status", func(w http.ResponseWriter, r *http.Request) {
 			w.Header().Set("Content-Type", "application/json")
@@ -243,6 +262,7 @@ func main() {
 			application.NewService(stopwatchService),
 			application.NewService(runSignUpService),
 			application.NewService(settingsService),
+			application.NewService(companionService),
 			application.NewService(dbService),
 		},
 		Assets: application.AssetOptions{

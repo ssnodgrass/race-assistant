@@ -100,6 +100,14 @@ go run ./cmd/serialtap -port COM4 -baud 4800
 
 More details are in [docs/timing-import-debugging.md](docs/timing-import-debugging.md).
 
+## Phone Companion
+
+The Phone Companion provides an installable local HTTPS web app for race start, common-chute finish timing, and bib-order entry. Open a race, choose **Phone Companion**, follow the one-time certificate trust setup, then generate a separate pairing QR for each phone.
+
+Use a laptop hotspot or travel router so the companion HTTPS address stays stable throughout the race. The phones queue entries during brief disconnects and replay them when they return to the laptop network.
+
+See [docs/companion-architecture.md](docs/companion-architecture.md) for the design and safeguards, and [docs/companion-race-day-testing.md](docs/companion-race-day-testing.md) for the complete setup and two-phone acceptance procedure.
+
 ## Useful Commands
 
 Regenerate bindings:
