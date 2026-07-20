@@ -61,12 +61,20 @@ If calibration is more than 30 minutes old or exceeds 100 ms uncertainty, the PW
 1. Turn Wi-Fi off on each phone, make two additional entries, and verify the header turns amber and pending count rises.
 2. Restore Wi-Fi and verify entries replay in order, pending returns to zero, and no duplicates appear.
 3. Enter bib 101 again. Confirm it advances the chute and is stored as a red duplicate marker.
-4. Use **No Bib / Placeholder**. Confirm a numbered `PH:` entry is created for the matching finish stick.
-5. Enter an unregistered bib. Confirm it advances with an amber warning and can reconcile after that participant is added.
-6. Use **Undo last** and confirm only the tail entry is removed and its place is reused.
-7. Attempt to acquire Timer from another phone. Confirm it is rejected until the laptop explicitly releases or transfers the lease.
-8. Revoke a phone from the desktop and confirm further writes are rejected while its unsent queue remains visible.
-9. Restart the laptop app, reopen the same database, and confirm paired devices and active leases reconnect on the same network address.
+4. Use **No Bib / Numbered Stick**. Confirm a numbered `PH:` entry is created for a real runner who needs follow-up.
+5. Record another finish time, then use **Extra Finish / Exclude from Results**. Confirm an **Excluded Finish** occupies the matching placement, the time and bib counts remain aligned, and no participant result or award is created for it.
+6. Enter an unregistered bib. Confirm it advances with an amber warning and can reconcile after that participant is added.
+7. Use **Undo last** and confirm only the tail entry is removed and its place is reused.
+8. Attempt to acquire Timer from another phone. Confirm it is rejected until the laptop explicitly releases or transfers the lease.
+9. Revoke a phone from the desktop and confirm further writes are rejected while its unsent queue remains visible.
+10. Restart the laptop app, reopen the same database, and confirm paired devices and active leases reconnect on the same network address.
+
+## Result search test
+
+1. Open **Live Results**, enter part of a runner's first or last name, and confirm all matching finishers appear rather than only the latest ten.
+2. Search by bib number and confirm the same runner appears.
+3. Open **Full Standings** and repeat both searches.
+4. Confirm numbered placeholders and excluded finishes do not appear as participant search results.
 
 ## Automated checks
 
@@ -79,4 +87,4 @@ npm test
 npm run build:dev
 ```
 
-The Go tests cover mixed-event reconciliation, offline start derivation, idempotency, role exclusivity, duplicate markers, placeholders, undo, and duplicate-bib enforcement. Frontend tests cover clock sample selection, drift correction, and elapsed-time formatting.
+The Go tests cover mixed-event reconciliation, offline start derivation, idempotency, role exclusivity, duplicate markers, numbered placeholders, excluded finishes, undo, and duplicate-bib enforcement. Frontend tests cover clock sample selection, drift correction, and elapsed-time formatting.

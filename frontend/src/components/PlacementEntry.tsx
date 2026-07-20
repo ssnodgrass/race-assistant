@@ -135,6 +135,8 @@ export const PlacementEntry: React.FC<PlacementEntryProps> = ({ race, participan
   const placeholderMarkerFor = (value: number) => `PH:${value}`;
   const isPlaceholderMarker = (value: string) => /^PH:\d+$/i.test(value);
   const placeholderNumberFromMarker = (value: string) => value.replace(/^PH:/i, '');
+  const genericMarkerFor = () => `GP:${crypto.randomUUID?.() || `${Date.now()}-${Math.random().toString(16).slice(2)}`}`;
+  const isGenericMarker = (value: string) => value.startsWith('GP:');
   const normalizeScannedValue = (value: string) => {
     const trimmed = value.trim();
     if (trimmed === "?") return placeholderMarkerFor(nextPlaceholder);
@@ -149,6 +151,7 @@ export const PlacementEntry: React.FC<PlacementEntryProps> = ({ race, participan
     if (participant) return `${participant.first_name} ${participant.last_name}`.trim();
     if (bibNumber === "?") return "Placeholder";
     if (isPlaceholderMarker(bibNumber)) return `Placeholder #${placeholderNumberFromMarker(bibNumber)}`;
+    if (isGenericMarker(bibNumber)) return "Excluded finish — not included in results";
     if (isDuplicateMarker(bibNumber)) return `Duplicate scan for bib ${duplicateBibFromMarker(bibNumber)}`;
     return "Unknown Runner";
   };
@@ -297,6 +300,7 @@ export const PlacementEntry: React.FC<PlacementEntryProps> = ({ race, participan
                         </div>
                         <button type="submit">Assign Bib</button>
                         <button type="button" onClick={() => handleAssign(parseInt(place), placeholderMarkerFor(nextPlaceholder), true)} style={{ backgroundColor: '#a63' }}>Placeholder #{nextPlaceholder}</button>
+                        <button type="button" onClick={() => handleAssign(parseInt(place), genericMarkerFor(), true)} style={{ backgroundColor: '#596273' }}>Excluded Finish</button>
                     </form>
                 </div>
             )}
@@ -329,6 +333,7 @@ export const PlacementEntry: React.FC<PlacementEntryProps> = ({ race, participan
                         </div>
                         <button type="submit" style={{ backgroundColor: 'var(--success)', minWidth: '130px', whiteSpace: 'nowrap' }}>Assign Bib</button>
                         <button type="button" onClick={() => handleAssign(parseInt(place), placeholderMarkerFor(nextPlaceholder), true)} style={{ backgroundColor: '#a63', minWidth: '130px', whiteSpace: 'nowrap' }}>Placeholder #{nextPlaceholder}</button>
+                        <button type="button" onClick={() => handleAssign(parseInt(place), genericMarkerFor(), true)} style={{ backgroundColor: '#596273', minWidth: '130px', whiteSpace: 'nowrap' }}>Excluded Finish</button>
                         <button type="button" onClick={resetTarget} style={{ backgroundColor: '#444', minWidth: '130px', whiteSpace: 'nowrap' }}>Next Place</button>
                     </form>
                 </div>
@@ -352,9 +357,10 @@ export const PlacementEntry: React.FC<PlacementEntryProps> = ({ race, participan
                             const isDuplicateOriginal = !!duplicateScan && row.index === duplicateScan.originalPlace;
                             const isDuplicateScan = !!p && isDuplicateMarker(p.bib_number);
                             const isPlaceholderRow = !!p && isPlaceholderMarker(p.bib_number);
+                            const isGenericRow = !!p && isGenericMarker(p.bib_number);
                             const rowBackground = isDuplicateOriginal || isDuplicateScan
                                 ? 'rgba(244, 67, 54, 0.14)'
-                                : (isPlaceholderRow ? 'rgba(170, 102, 51, 0.14)' : (isTargeted ? 'rgba(0, 123, 255, 0.1)' : 'transparent'));
+                                : (isPlaceholderRow ? 'rgba(170, 102, 51, 0.14)' : (isGenericRow ? 'rgba(89, 98, 115, 0.2)' : (isTargeted ? 'rgba(0, 123, 255, 0.1)' : 'transparent')));
                             if (!p) {
                                 return (
                                     <tr key={row.index} onClick={() => selectPlace(row.index.toString())} style={{ backgroundColor: isTargeted ? 'rgba(244, 67, 54, 0.1)' : 'transparent', cursor: 'pointer' }}>
@@ -370,9 +376,10 @@ export const PlacementEntry: React.FC<PlacementEntryProps> = ({ race, participan
                                 <tr key={p.place} onClick={() => selectPlace(p.place.toString())} style={{ backgroundColor: rowBackground, cursor: 'pointer' }}>
                                     <td style={{ paddingLeft: 'var(--space-lg)' }}>{isTargeted ? '👉 ' : ''}{p.place}</td>
                                     <td>
-                                        <strong>{isDuplicateScan ? duplicateBibFromMarker(p.bib_number) : (isPlaceholderMarker(p.bib_number) ? `Placeholder #${placeholderNumberFromMarker(p.bib_number)}` : p.bib_number)}</strong>
+                                        <strong>{isDuplicateScan ? duplicateBibFromMarker(p.bib_number) : (isPlaceholderMarker(p.bib_number) ? `Placeholder #${placeholderNumberFromMarker(p.bib_number)}` : (isGenericRow ? 'Excluded Finish' : p.bib_number))}</strong>
                                         {(isDuplicateOriginal || isDuplicateScan) && <span className="badge" style={{ marginLeft: '8px', backgroundColor: 'var(--danger)', color: 'white' }}>DUP</span>}
                                         {isPlaceholderMarker(p.bib_number) && <span className="badge" style={{ marginLeft: '8px', backgroundColor: '#a63', color: 'white' }}>PLACEHOLDER</span>}
+                                        {isGenericRow && <span className="badge" style={{ marginLeft: '8px', backgroundColor: '#596273', color: 'white' }}>NO RESULT</span>}
                                     </td>
                                     <td>{getParticipantName(p.bib_number)}</td>
                                     <td style={{ fontFamily: 'monospace', color: 'var(--text-dim)' }}>{p.unofficial_time || '--'}</td>
