@@ -1,0 +1,54 @@
+# Phone Companion Architecture
+
+The Phone Companion is a local-only PWA served by the Race Assistant laptop. It does not use cloud synchronization or voice recognition. The SQLite race database remains the system of record.
+
+## Data flow
+
+1. The desktop creates a 24-hour companion session for a race and a selected recording scope: one event or event `0` for the existing common chute across all events.
+2. A phone installs the laptop's local CA once, then scans a single-use pairing URL that expires after five minutes.
+3. The server stores only a SHA-256 hash of the phone's random bearer token. The browser receives the token in a Secure, HttpOnly, SameSite cookie.
+4. A paired phone acquires one exclusive role: official start, finish timer, or bib chute.
+5. Every tap is captured against a calibrated laptop clock and first written to the phone's IndexedDB outbox.
+6. The outbox replays in capture order. A stable `request_id` makes retries idempotent, and a `session_id` prevents entries from an old race replaying into a new one.
+7. Finish captures append to `timing_pulses`; bib captures append independently to `chute_assignments`. In common-chute mode their shared global place reconciles them on the results page, where the participant's event determines event place. In event mode both streams are written directly to the selected event.
+
+The phone keeps an authenticated Server-Sent Events stream open to the laptop for state and liveness. The server emits state once per second; if the phone receives nothing for 3.5 seconds it reports **Disconnected**, even when the operating system still considers cellular data online. Commands continue to use the idempotent HTTP API, so a WebSocket protocol is unnecessary.
+
+## Local networking and trust
+
+- Port `8080` serves only the certificate/profile bootstrap page.
+- Port `8443` serves the PWA and companion API over HTTPS.
+- Race Assistant creates a persistent local CA under the user's application configuration directory and a short-lived server certificate for the selected private LAN address.
+- The desktop displays the CA fingerprint for out-of-band verification.
+- A dedicated travel router or stable laptop hotspot is recommended. Restart Race Assistant after changing networks so its certificate and QR codes use the new address.
+
+## Persistence
+
+Migration `0003_companion.sql` adds capture metadata to timing pulses and creates:
+
+- `companion_sessions` for race, common-chute scope, status, and expiry;
+- `companion_devices` for paired device names, token hashes, revocation, and last-seen time;
+- `companion_role_leases` for exclusive operator roles;
+- `companion_requests` for the idempotency/audit record and tail-only undo.
+
+The PWA caches its application shell and keeps queued entries in IndexedDB. Pairing, cached race state, calibration, and the held role are retained locally so a temporary laptop restart or Wi-Fi interruption does not erase captures. Entries belonging to an older session are isolated and require an explicit operator discard; they are never submitted to the current session.
+
+The on-phone **Local Queue** view lists every unsent entry with its type, capture time, abbreviated session ID, and sync eligibility. Operators can delete one record, all records from older sessions, or the complete unsent queue. Deletion always requires confirmation.
+
+## Timing behavior
+
+The phone takes seven NTP-style samples and uses the median offset from the three lowest-latency samples. Captures retain the phone timestamp, calibrated laptop timestamp, offset, calibration time, and estimated uncertainty. A post-outage calibration linearly corrects estimated drift before upload.
+
+Calibration expires after 30 minutes, and the server rejects captures over 100 ms uncertainty. A remote start can be captured while disconnected and becomes the race's official start when it reaches the laptop. Finish taps captured before that upload remain pending in SQLite and receive elapsed times in one transaction when the start arrives.
+
+## Safeguards
+
+- Common-chute mode refuses to start when non-empty bibs are duplicated within a race.
+- Only one device may hold each role, and one device may hold only one role at a time.
+- Pairing links are single use and cannot outlive their session.
+- Device revocation immediately rejects new writes without deleting the phone's outbox.
+- Duplicate, unknown, and placeholder bibs advance the chute with visible warnings rather than silently shifting later runners.
+- Undo is limited to the submitting device's latest tail entry, so it cannot create a place gap.
+- Captures that precede the official start or are implausibly in the future are rejected for clock review.
+
+See [companion-race-day-testing.md](companion-race-day-testing.md) for the physical two-phone acceptance test.

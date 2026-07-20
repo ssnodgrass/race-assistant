@@ -46,8 +46,9 @@ export const LiveResults: React.FC<LiveResultsProps> = ({ events, selectedRace, 
         const h = Math.floor(diff / 3600000);
         const m = Math.floor((diff % 3600000) / 60000);
         const s = Math.floor((diff % 60000) / 1000);
-        setElapsed(`${h.toString().padStart(2, '0')}:${m.toString().padStart(2, '0')}:${s.toString().padStart(2, '0')}`);
-    }, 1000);
+        const cs = Math.floor((diff % 1000) / 10);
+        setElapsed(`${h.toString().padStart(2, '0')}:${m.toString().padStart(2, '0')}:${s.toString().padStart(2, '0')}.${cs.toString().padStart(2, '0')}`);
+    }, 50);
     return () => clearInterval(timer);
   }, [selectedRace?.start_time]);
 
@@ -87,9 +88,10 @@ export const LiveResults: React.FC<LiveResultsProps> = ({ events, selectedRace, 
             <h1 style={{ margin: 0, fontSize: '3.5rem', color: 'var(--accent)' }}>Live Results</h1>
             {selectedRace?.start_time && (
                 <div style={{ fontSize: '1.8rem', color: 'var(--success)', fontFamily: 'monospace', fontWeight: 700 }}>
-                    RACE TIME: {elapsed}
+                    RACE ELAPSED: {elapsed}
                 </div>
             )}
+            <div style={{ marginTop: 4, color: 'var(--text-dim)', fontSize: '0.95rem' }}>Times prefixed with ~ are approximate chute captures pending a finish-line time.</div>
         </div>
         <div className="flex-row">
             <span style={{ fontSize: '1.5rem', fontWeight: 600 }}>EVENT:</span>

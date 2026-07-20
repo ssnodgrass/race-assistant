@@ -102,6 +102,14 @@ func (r *TimingRepository) DeletePulses(raceID int, eventID int) error {
 	return err
 }
 
+func (r *TimingRepository) DeletePulsesExact(raceID int, eventID int) error {
+	if err := r.checkDB(); err != nil {
+		return err
+	}
+	_, err := r.db.Exec("DELETE FROM timing_pulses WHERE race_id = ? AND event_id = ?", raceID, eventID)
+	return err
+}
+
 func (r *TimingRepository) GetBibAssignment(raceID int, bibNumber string) (int, error) {
 	if err := r.checkDB(); err != nil {
 		return 0, err
@@ -238,6 +246,14 @@ func (r *TimingRepository) DeletePlacements(raceID int, eventID int) error {
 		return err
 	}
 	_, err := r.db.Exec("DELETE FROM chute_assignments WHERE race_id = ?", raceID)
+	return err
+}
+
+func (r *TimingRepository) DeletePlacementsExact(raceID int, eventID int) error {
+	if err := r.checkDB(); err != nil {
+		return err
+	}
+	_, err := r.db.Exec("DELETE FROM chute_assignments WHERE race_id = ? AND event_id = ?", raceID, eventID)
 	return err
 }
 

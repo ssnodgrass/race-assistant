@@ -89,6 +89,71 @@ type ChuteAssignment struct {
 	UnofficialTime string `json:"unofficial_time"`
 }
 
+type CompanionSession struct {
+	ID        string `json:"id"`
+	RaceID    int    `json:"race_id"`
+	EventID   int    `json:"event_id"`
+	Status    string `json:"status"`
+	CreatedAt int64  `json:"created_at_unix_ms"`
+	ExpiresAt int64  `json:"expires_at_unix_ms"`
+}
+
+type CompanionDevice struct {
+	ID       string `json:"id"`
+	Name     string `json:"name"`
+	LastSeen int64  `json:"last_seen_at_unix_ms"`
+	Revoked  bool   `json:"revoked"`
+	Role     string `json:"role"`
+}
+
+type CompanionState struct {
+	Session       *CompanionSession `json:"session"`
+	Devices       []CompanionDevice `json:"devices"`
+	RaceName      string            `json:"race_name"`
+	EventName     string            `json:"event_name"`
+	RaceStart     *time.Time        `json:"race_start"`
+	TimeCount     int               `json:"time_count"`
+	BibCount      int               `json:"bib_count"`
+	NextTimePlace int               `json:"next_time_place"`
+	NextBibPlace  int               `json:"next_bib_place"`
+	DuplicateBibs []string          `json:"duplicate_bibs"`
+}
+
+type CompanionPairing struct {
+	Token     string `json:"token"`
+	URL       string `json:"url"`
+	ExpiresAt int64  `json:"expires_at_unix_ms"`
+}
+
+type CompanionSetup struct {
+	HTTPSURL      string `json:"https_url"`
+	BootstrapURL  string `json:"bootstrap_url"`
+	CAFingerprint string `json:"ca_fingerprint"`
+	ServerError   string `json:"server_error"`
+}
+
+type CompanionEntry struct {
+	RequestID         string  `json:"request_id"`
+	Kind              string  `json:"kind"`
+	CapturedAt        int64   `json:"captured_at_unix_ms"`
+	ClientCapturedAt  int64   `json:"client_captured_at_unix_ms"`
+	CalibrationAt     int64   `json:"calibration_at_unix_ms"`
+	CalibrationOffset float64 `json:"calibration_offset_ms"`
+	BibNumber         string  `json:"bib_number"`
+	UncertaintyMS     float64 `json:"uncertainty_ms"`
+}
+
+type CompanionAck struct {
+	RequestID       string `json:"request_id"`
+	Status          string `json:"status"`
+	Place           int    `json:"place"`
+	Elapsed         string `json:"elapsed"`
+	BibNumber       string `json:"bib_number"`
+	ParticipantName string `json:"participant_name"`
+	EventName       string `json:"event_name"`
+	Warning         string `json:"warning"`
+}
+
 type SegmentEventSelection struct {
 	Segment int `json:"segment"`
 	EventID int `json:"event_id"`

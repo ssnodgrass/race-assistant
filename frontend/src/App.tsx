@@ -19,14 +19,17 @@ import { AwardsView } from './components/AwardsView';
 import { CSVImport } from './components/CSVImport';
 import { StopwatchImport } from './components/StopwatchImport';
 import { LiveResults } from './components/LiveResults';
+import { CompanionManager } from './components/CompanionManager';
+import { CompanionApp } from './components/CompanionApp';
 import { isBrowserPreview } from './utils/runtime';
 import packageJSON from '../package.json';
 
 import './index.css';
 
-type View = 'list' | 'race_detail' | 'create_race' | 'manage_events' | 'award_config' | 'participants' | 'placements' | 'times' | 'awards' | 'reporting' | 'import_csv' | 'stopwatch' | 'live_display';
+type View = 'list' | 'race_detail' | 'create_race' | 'manage_events' | 'award_config' | 'participants' | 'placements' | 'times' | 'awards' | 'reporting' | 'import_csv' | 'stopwatch' | 'live_display' | 'companion';
 
 function App() {
+  const isCompanion = window.location.pathname.startsWith('/companion');
   const appVersion = packageJSON.version;
   const initialView = new URLSearchParams(window.location.search).get('view') as View | null;
   const [dbPath, setDbPath] = useState<string>('');
@@ -47,6 +50,7 @@ function App() {
   }, [selectedRace]);
 
   const checkStatus = () => {
+    if (isCompanion) return;
     const isWeb = isBrowserMode;
     const statusCall = isWeb 
         ? fetch("/api/status").then(r => r.json())
@@ -142,6 +146,8 @@ function App() {
     </div>
   );
 
+  if (isCompanion) return <CompanionApp />;
+
   if (isExternalDisplay || isBrowserMode) {
     return (
         <div style={{ backgroundColor: '#000', color: 'white', height: '100vh', display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
@@ -206,6 +212,7 @@ function App() {
                             <NavItem label="Placements" target="placements" icon="🥇" />
                             <NavItem label="Stopwatch Import" target="stopwatch" icon="⏱️" />
                             <NavItem label="Manual Times" target="times" icon="🖊️" />
+                            <NavItem label="Phone Companion" target="companion" icon="📱" />
                             <NavItem label="Process Awards" target="awards" icon="🏆" />
                             <NavItem label="Full Reporting" target="reporting" icon="📄" />
                             <NavItem label="Live Display" target="live_display" icon="📺" />
@@ -255,6 +262,7 @@ function App() {
                     {view === 'participants' && <ParticipantManagement raceID={selectedRace.id} events={events} participants={participants} onRefresh={refreshActiveRace} onImport={() => setView('import_csv')} />}
                     {view === 'placements' && <PlacementEntry race={selectedRace} participants={participants} events={events} onRefresh={refreshActiveRace} />}
                     {view === 'times' && <TimeEntry raceID={selectedRace.id} events={events} />}
+                    {view === 'companion' && <CompanionManager race={selectedRace} events={events} onRaceRefresh={refreshActiveRace} />}
                     {view === 'awards' && <AwardsView events={events} mode="awards" />}
                     {view === 'reporting' && <AwardsView events={events} mode="standings" />}
                     {view === 'stopwatch' && <StopwatchImport raceID={selectedRace.id} events={events} onComplete={() => setView('race_detail')} />}
