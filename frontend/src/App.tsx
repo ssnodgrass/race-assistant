@@ -209,7 +209,7 @@ function App() {
                             <div className="sidebar-divider">Entry & Results</div>
                             <NavItem label="Placements" target="placements" icon="🥇" />
                             <NavItem label="Stopwatch Import" target="stopwatch" icon="⏱️" />
-                            <NavItem label="Manual Times" target="times" icon="🖊️" />
+                            <NavItem label="Finish Times" target="times" icon="🖊️" />
                             <NavItem label="Phone Companion" target="companion" icon="📱" />
                             <NavItem label="Awards / Results" target="awards" icon="🏆" />
                             <NavItem label="Live Display" target="live_display" icon="📺" />

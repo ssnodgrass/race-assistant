@@ -72,8 +72,8 @@ func (s *TimingService) AssignBibToPlace(raceID int, place int, bibNumber string
 }
 
 func (s *TimingService) AssignBibToPlaceForEvent(raceID int, eventID int, place int, bibNumber string) error {
-	if bibNumber != "?" && bibNumber != "" {
-		s.repo.DeleteBibAssignment(raceID, bibNumber)
+	if err := s.preventImplicitBibMove(raceID, eventID, place, bibNumber); err != nil {
+		return err
 	}
 
 	ca := models.ChuteAssignment{RaceID: raceID, EventID: eventID, Place: place, BibNumber: bibNumber}
@@ -85,8 +85,8 @@ func (s *TimingService) AssignBibToPlaceWithTime(raceID int, place int, bibNumbe
 }
 
 func (s *TimingService) AssignBibToPlaceWithTimeForEvent(raceID int, eventID int, place int, bibNumber string, unofficialTime string) error {
-	if bibNumber != "?" && bibNumber != "" {
-		s.repo.DeleteBibAssignment(raceID, bibNumber)
+	if err := s.preventImplicitBibMove(raceID, eventID, place, bibNumber); err != nil {
+		return err
 	}
 
 	ca := models.ChuteAssignment{
@@ -97,6 +97,21 @@ func (s *TimingService) AssignBibToPlaceWithTimeForEvent(raceID int, eventID int
 		UnofficialTime: unofficialTime,
 	}
 	return s.repo.UpsertChuteAssignment(&ca)
+}
+
+func (s *TimingService) preventImplicitBibMove(raceID, eventID, place int, bibNumber string) error {
+	bibNumber = strings.TrimSpace(bibNumber)
+	if bibNumber == "" || bibNumber == "?" || strings.HasPrefix(bibNumber, "DUP:") || strings.HasPrefix(bibNumber, "GP:") {
+		return nil
+	}
+	existingEventID, existingPlace, err := s.repo.GetBibAssignmentScope(raceID, bibNumber)
+	if err != nil {
+		return err
+	}
+	if existingPlace > 0 && (existingEventID != eventID || existingPlace != place) {
+		return fmt.Errorf("bib %s is already assigned to place %d; remove that assignment before moving it", bibNumber, existingPlace)
+	}
+	return nil
 }
 
 func (s *TimingService) ShiftPlacements(raceID int, startPlace int, delta int) error {

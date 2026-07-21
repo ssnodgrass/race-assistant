@@ -111,15 +111,20 @@ func (r *TimingRepository) DeletePulsesExact(raceID int, eventID int) error {
 }
 
 func (r *TimingRepository) GetBibAssignment(raceID int, bibNumber string) (int, error) {
-	if err := r.checkDB(); err != nil {
-		return 0, err
-	}
-	var place int
-	err := r.db.QueryRow("SELECT place FROM chute_assignments WHERE race_id = ? AND bib_number = ?", raceID, bibNumber).Scan(&place)
-	if err == sql.ErrNoRows {
-		return 0, nil
-	}
+	_, place, err := r.GetBibAssignmentScope(raceID, bibNumber)
 	return place, err
+}
+
+func (r *TimingRepository) GetBibAssignmentScope(raceID int, bibNumber string) (int, int, error) {
+	if err := r.checkDB(); err != nil {
+		return 0, 0, err
+	}
+	var eventID, place int
+	err := r.db.QueryRow("SELECT event_id, place FROM chute_assignments WHERE race_id = ? AND bib_number = ? LIMIT 1", raceID, bibNumber).Scan(&eventID, &place)
+	if err == sql.ErrNoRows {
+		return 0, 0, nil
+	}
+	return eventID, place, err
 }
 
 func (r *TimingRepository) UpsertChuteAssignment(ca *models.ChuteAssignment) error {
@@ -144,14 +149,6 @@ func (r *TimingRepository) DeleteChuteAssignmentByEvent(raceID, eventID, place i
 		return err
 	}
 	_, err := r.db.Exec("DELETE FROM chute_assignments WHERE race_id = ? AND event_id = 0 AND place = ?", raceID, place)
-	return err
-}
-
-func (r *TimingRepository) DeleteBibAssignment(raceID int, bibNumber string) error {
-	if err := r.checkDB(); err != nil {
-		return err
-	}
-	_, err := r.db.Exec("DELETE FROM chute_assignments WHERE race_id = ? AND bib_number = ?", raceID, bibNumber)
 	return err
 }
 
