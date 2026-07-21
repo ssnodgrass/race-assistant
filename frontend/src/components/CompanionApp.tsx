@@ -1,6 +1,7 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState, type PointerEvent as ReactPointerEvent } from 'react';
 import jsQR from 'jsqr';
 import { Calibration, correctCapture, formatElapsedHundredths, formatStoredElapsedHundredths, selectCalibration } from '../utils/companionClock';
+import { isIntentionalTap } from '../utils/companionGesture';
 import { pairingCredentialFrom } from '../utils/companionPairing';
 import './CompanionApp.css';
 import './CompanionQueue.css';
@@ -137,8 +138,10 @@ export function CompanionApp() {
   const [lastAck,setLastAck]=useState<DisplayAck|null>(null);
   const [bib,setBib]=useState('');
   const [armed,setArmed]=useState(false);
+  const [finishPressed,setFinishPressed]=useState(false);
   const [tick,setTick]=useState(Date.now());
   const armTimer=useRef<number>();
+  const finishGesture=useRef<{pointerID:number;x:number;y:number;clientAt:number}|null>(null);
   const flushing=useRef(false);
   const flushRequested=useRef(false);
   const startCapturePending=useRef(false);
@@ -234,7 +237,7 @@ export function CompanionApp() {
   const hasPendingForRole=(role:Role)=>queuedEntries.some(entry=>entry.session_id===stateRef.current?.session?.id&&entryRole(entry)===role);
   const release=async()=>{const role=heldRole;if(!role)return;const sessionID=stateRef.current?.session?.id;const entries=await allEntries();if(entries.some(entry=>entry.session_id===sessionID&&entryRole(entry)===role)){setMessage(`${role.toUpperCase()} QUEUE MUST SYNC BEFORE RELEASING THIS ROLE`);await refreshPending();return}try{await api(`/api/companion/role/${role}`,{method:'DELETE'});localStorage.removeItem(ROLE_KEY);setHeldRole(null);setArmed(false);setMessage('ROLE RELEASED')}catch(e){setMessage(`COULD NOT RELEASE ROLE · ${String(e).replace(/^Error:\s*/,'')}`)}};
 
-  const capture=async(kind:Entry['kind'],bibNumber='')=>{
+  const capture=async(kind:Entry['kind'],bibNumber='',clientAtOverride?:number)=>{
     const current=cal;
     if(!current||Date.now()-current.at>30*60*1000){setMessage('CLOCK CALIBRATION EXPIRED — RECONNECT');return}
     if(current.uncertainty>100){setMessage('CLOCK UNCERTAINTY TOO HIGH — RECALIBRATE');return}
@@ -246,10 +249,14 @@ export function CompanionApp() {
       if(startCapturePending.current||existing){startCapturePending.current=true;setMessage('START ALREADY SAVED · WAITING FOR LAPTOP');return}
       startCapturePending.current=true;
     }
-    const clientAt=nowClientEpoch();
+    const clientAt=clientAtOverride??nowClientEpoch();
     const entry:Entry={request_id:uuid(),session_id:sessionID,kind,captured_at_unix_ms:Math.round(clientAt+current.offset),client_captured_at_unix_ms:Math.round(clientAt),calibration_at_unix_ms:current.at,calibration_offset_ms:current.offset,bib_number:bibNumber,uncertainty_ms:current.uncertainty};
     try{await putEntry(entry)}catch(e){if(kind==='start')startCapturePending.current=false;throw e}await refreshPending();setMessage(online?'SAVED LOCALLY · SYNCING…':'SAVED OFFLINE · WAITING FOR LAPTOP');if(navigator.vibrate)navigator.vibrate(35);void flush();
   };
+  const cancelFinishGesture=()=>{finishGesture.current=null;setFinishPressed(false)};
+  const beginFinishGesture=(event:ReactPointerEvent<HTMLButtonElement>)=>{if(event.pointerType==='mouse'&&event.button!==0)return;finishGesture.current={pointerID:event.pointerId,x:event.clientX,y:event.clientY,clientAt:nowClientEpoch()};setFinishPressed(true)};
+  const moveFinishGesture=(event:ReactPointerEvent<HTMLButtonElement>)=>{const gesture=finishGesture.current;if(!gesture||gesture.pointerID!==event.pointerId)return;if(!isIntentionalTap(gesture,{x:event.clientX,y:event.clientY}))cancelFinishGesture()};
+  const completeFinishGesture=(event:ReactPointerEvent<HTMLButtonElement>)=>{const gesture=finishGesture.current;if(!gesture||gesture.pointerID!==event.pointerId)return;const shouldRecord=isIntentionalTap(gesture,{x:event.clientX,y:event.clientY});cancelFinishGesture();if(shouldRecord)void capture('time','',gesture.clientAt)};
   const submitBib=async(value=bib)=>{if(!value.trim())return;await capture('bib',value.trim());setBib('')};
   const undo=async()=>{if(!lastAck)return;try{await api(`/api/companion/undo/${lastAck.request_id}`,{method:'POST'});setMessage(`UNDID PLACE ${lastAck.place}`);setLastAck(null);await loadState()}catch(e){setMessage(String(e))}};
   const deleteQueuedEntry=async(entry:Entry)=>{if(!window.confirm(`Delete this unsent ${entry.kind==='time'?'finish time':entry.kind} entry from the phone?`))return;await deleteEntry(entry.request_id);if(entry.kind==='start')startCapturePending.current=false;setMessage('LOCAL QUEUE ENTRY DELETED');await refreshPending()};
@@ -298,7 +305,7 @@ export function CompanionApp() {
       {active==='start'&&state?.race_start?<section className="companion-center" style={{flex:'1 0 auto'}}><div style={{fontSize:'4rem'}}>✓</div><h2 style={{color:'#70e094',margin:0}}>Official Start Recorded</h2><div style={{font:'800 1.5rem monospace'}}>{new Date(state.race_start).toLocaleTimeString()}</div><p>The laptop accepted the official start and automatically released this phone's Start role.</p></section>:
       heldRole!==active?<div className="companion-center role-gate" style={{flex:'1 0 auto'}}><h2>{active==='start'?'Start Line':active==='timer'?'Finish Timer':'Bib Chute'}</h2><p>{online?'Acquire this exclusive role before recording. For a remote start, acquire and calibrate before leaving the laptop network.':'Role acquisition requires the laptop. Reconnect to its network, acquire Start, then leave while keeping this PWA ready.'}</p><button disabled={!online} onClick={()=>acquire(active)}>Acquire {active} role</button></div>:
       active==='start'?<section className="companion-center" style={{flex:'1 0 auto'}}><div className={`calibration ${cal&&Date.now()-cal.at<1800000&&cal.uncertainty<=50?'good':'bad'}`}>Clock uncertainty {cal?`±${Math.round(cal.uncertainty)} ms`:'unknown'}</div>{online&&<button onClick={()=>{setMessage('CALIBRATING…');calibrate().then(()=>setMessage('CLOCK READY · SAFE TO LEAVE WI-FI')).catch(()=>setMessage('CALIBRATION FAILED'))}}>Recalibrate Clock</button>}{!armed?<button className="arm-button" onPointerDown={()=>armTimer.current=window.setTimeout(()=>setArmed(true),2000)} onPointerUp={()=>clearTimeout(armTimer.current)} onPointerCancel={()=>clearTimeout(armTimer.current)}>Hold 2 seconds to arm</button>:<button className="start-button" disabled={startQueuePending} onPointerDown={()=>capture('start')}>{startQueuePending?'START SAVED':'START RACE'}</button>}<p>{startQueuePending?'Start saved on this phone. Keep the role reserved and reconnect to the laptop to make it official.':online?'Start role reserved. Recalibrate immediately before leaving; the gun tap will be saved on this phone.':'Start role reserved offline. The gun tap will be saved locally; return to the laptop network afterward to set the official start.'}</p><button style={{background:'#353d49'}} disabled={!online||startQueuePending} onClick={release}>{startQueuePending?'Start Queued — Role Reserved':online?'Release Start Role':'Reconnect to Release Start'}</button></section>:
-      active==='timer'?<section className="timer-screen" style={{flex:'1 0 auto'}}><div className="sequence">NEXT FINISH #{state?.next_time_place??1}{pending?` + ${pending} queued`:''}</div><button className="finish-button" onPointerDown={e=>{e.preventDefault();capture('time')}}>RECORD<br/>FINISH</button></section>:
+      active==='timer'?<section className="timer-screen" style={{flex:'1 0 auto'}}><div className="sequence">NEXT FINISH #{state?.next_time_place??1}{pending?` + ${pending} queued`:''}</div><button className="finish-button" style={finishPressed?{background:'#187a36',boxShadow:'inset 0 0 0 6px #70e094'}:undefined} onPointerDown={beginFinishGesture} onPointerMove={moveFinishGesture} onPointerUp={completeFinishGesture} onPointerCancel={cancelFinishGesture} onPointerLeave={cancelFinishGesture}>{finishPressed?'RELEASE TO':'RECORD'}<br/>FINISH</button><small style={{color:'#8f9bab'}}>Scrolling or dragging across the button will not record a finish.</small></section>:
       <section className="bib-screen" style={{flexShrink:0,margin:'0 auto'}}><div className="sequence">NEXT BIB POSITION #{state?.next_bib_place??1}</div><input className="bib-display" inputMode="text" autoCapitalize="characters" value={bib} onChange={e=>setBib(e.target.value.toUpperCase())} placeholder="BIB" onKeyDown={e=>{if(e.key==='Enter')submitBib()}}/>
         <div className="keypad">{['1','2','3','4','5','6','7','8','9','ABC','0','⌫'].map(k=><button key={k} onClick={()=>k==='⌫'?setBib(v=>v.slice(0,-1)):k==='ABC'?document.querySelector<HTMLInputElement>('.bib-display')?.focus():setBib(v=>v+k)}>{k}</button>)}</div>
         <div className="bib-actions"><button onClick={()=>submitBib()} disabled={!bib}>Submit Bib</button><button className="placeholder" onClick={()=>capture('bib','?')}>No Bib / Numbered Stick</button><button style={{background:'#596273',gridColumn:'1 / -1'}} onClick={()=>capture('bib','__GENERIC__')}>Extra Finish / Exclude from Results</button></div>

@@ -1,4 +1,4 @@
-const CACHE='race-companion-v10';
+const CACHE='race-companion-v11';
 const SHELL=['/companion.webmanifest','/companion-icon.svg'];
 const OFFLINE_PAGE='<!doctype html><meta name="viewport" content="width=device-width"><meta name="theme-color" content="#10151d"><style>html,body{margin:0;min-height:100%;background:#080b10;color:#f5f7fb;font:18px system-ui}main{box-sizing:border-box;min-height:100vh;display:grid;place-content:center;padding:28px;text-align:center}section{max-width:430px;padding:24px;background:#151a22;border:1px solid #d58610;border-radius:14px}p{color:#bac3cf;line-height:1.5}button{padding:14px 22px;border:0;border-radius:8px;background:#0879e8;color:white;font:700 1rem system-ui}</style><main><section><h1>Race Assistant is offline</h1><p>The saved app shell could not be loaded. Confirm this phone is connected to the laptop network, then try again. If the laptop address changed, use the stable or fallback address on its Phone Companion screen.</p><button onclick="location.reload()">Retry Connection</button></section></main>';
 self.addEventListener('install',event=>event.waitUntil((async()=>{
