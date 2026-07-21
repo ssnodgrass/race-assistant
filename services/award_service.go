@@ -40,6 +40,8 @@ func (s *AwardService) GetAwards(eventID int) ([]AwardCategory, error) {
 
 	for i := range results {
 		results[i].EventPlace = i + 1
+		results[i].Time = formatStoredElapsedHundredths(results[i].Time)
+		results[i].UnofficialTime = formatStoredElapsedHundredths(results[i].UnofficialTime)
 	}
 
 	claimed := make(map[string]bool)

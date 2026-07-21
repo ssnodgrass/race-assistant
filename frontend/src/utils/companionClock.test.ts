@@ -14,6 +14,8 @@ describe('companion clock',()=>{
   it('rounds display values to hundredths without losing the canonical milliseconds',()=>{
     expect(formatElapsedHundredths(3_723_129)).toBe('01:02:03.13');
     expect(formatElapsedHundredths(59_999)).toBe('00:01:00.00');
+    expect(formatStoredElapsedHundredths('01:02:03.345')).toBe('01:02:03.35');
+    expect(formatStoredElapsedHundredths('00:59:59.999')).toBe('01:00:00.00');
     expect(formatStoredElapsedHundredths('01:02:03.126')).toBe('01:02:03.13');
   });
 });

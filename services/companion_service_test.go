@@ -145,10 +145,10 @@ func TestCompanionCommonChuteReconcilesMixedEvents(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(results5) != 2 || results5[0].Time != "00:18:00.000" || results5[1].ChutePlace != 3 || results5[1].EventPlace != 2 {
+	if len(results5) != 2 || results5[0].Time != "00:18:00.00" || results5[1].ChutePlace != 3 || results5[1].EventPlace != 2 {
 		t.Fatalf("unexpected 5K results: %+v", results5)
 	}
-	if len(results10) != 1 || results10[0].Time != "00:35:00.000" || results10[0].ChutePlace != 2 || results10[0].EventPlace != 1 {
+	if len(results10) != 1 || results10[0].Time != "00:35:00.00" || results10[0].ChutePlace != 2 || results10[0].EventPlace != 1 {
 		t.Fatalf("unexpected 10K results: %+v", results10)
 	}
 }

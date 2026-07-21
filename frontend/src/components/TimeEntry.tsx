@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { TimingService } from '../../bindings/github.com/ssnodgrass/race-assistant/services';
 import { TimingPulse, Event as RaceEvent } from '../../bindings/github.com/ssnodgrass/race-assistant/models';
+import { formatStoredElapsedHundredths } from '../utils/companionClock';
 
 interface TimeEntryProps {
   raceID: number;
@@ -62,7 +63,7 @@ export const TimeEntry: React.FC<TimeEntryProps> = ({ raceID, events }) => {
     formDirtyRef.current = true;
     setEditingID(p.id);
     setTargetPlace(p.place.toString());
-    setTimeValue(p.raw_time);
+    setTimeValue(formatStoredElapsedHundredths(p.raw_time));
     timeInputRef.current?.focus();
   };
 
@@ -162,10 +163,10 @@ export const TimeEntry: React.FC<TimeEntryProps> = ({ raceID, events }) => {
                 <input type="number" value={targetPlace} onChange={e => { formDirtyRef.current = true; setTargetPlace(e.target.value); }} style={{ width: '100%' }} />
             </div>
             <div style={{ flex: 1 }}>
-                <label style={{ display: 'block', marginBottom: '8px', fontWeight: 600, fontSize: '0.85em', color: 'var(--text-dim)' }}>TIME (HH:MM:SS.ms)</label>
+                <label style={{ display: 'block', marginBottom: '8px', fontWeight: 600, fontSize: '0.85em', color: 'var(--text-dim)' }}>TIME (HH:MM:SS.cc)</label>
                 <input 
                     ref={timeInputRef}
-                    placeholder="e.g. 00:18:24.000" 
+                    placeholder="e.g. 00:18:24.00"
                     value={timeValue} 
                     onChange={e => { formDirtyRef.current = true; setTimeValue(e.target.value); }}
                     style={{ width: '100%', fontSize: '1.2rem', fontFamily: 'monospace' }} 
@@ -202,7 +203,7 @@ export const TimeEntry: React.FC<TimeEntryProps> = ({ raceID, events }) => {
                             </td>
                             <td>
                                 <span style={{ fontFamily: 'monospace', fontSize: '1.2rem', color: 'var(--accent)', fontWeight: 700 }}>
-                                    {p.raw_time}
+                                    {formatStoredElapsedHundredths(p.raw_time)}
                                 </span>
                             </td>
                             <td style={{ textAlign: 'right', paddingRight: 'var(--space-lg)' }}>

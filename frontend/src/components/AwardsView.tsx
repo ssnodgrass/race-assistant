@@ -94,7 +94,7 @@ export const AwardsView: React.FC<AwardsViewProps> = ({ events, mode = 'awards',
   };
 
   const renderTime = (r: Result) => {
-    if (r.time) return r.time;
+    if (r.time) return formatStoredElapsedHundredths(r.time);
     if (r.unofficial_time) return `~${formatStoredElapsedHundredths(r.unofficial_time)}`;
     return '--:--.--';
   };
