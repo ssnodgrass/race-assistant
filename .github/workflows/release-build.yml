@@ -75,7 +75,6 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          mkdir -p dist
           tag="${GITHUB_REF_NAME}"
           bin_file="$(find bin -maxdepth 1 -type f -executable | head -n 1)"
           if [ -z "${bin_file}" ]; then
@@ -84,7 +83,11 @@ jobs:
           fi
           base_name="$(basename "${bin_file}")"
           archive="dist/${base_name}-${tag}-linux-amd64.tar.gz"
-          tar -czf "${archive}" -C bin "${base_name}"
+          package_dir="dist/package"
+          mkdir -p "${package_dir}"
+          cp "${bin_file}" LICENSE README.md TRADEMARKS.md "${package_dir}/"
+          tar -czf "${archive}" -C "${package_dir}" .
+          rm -r "${package_dir}"
           echo "Created ${archive}"
 
       - name: Package Windows artifact
@@ -98,7 +101,11 @@ jobs:
             Write-Error "No Windows binary found in bin/"
           }
           $archive = "dist/$($binFile.BaseName)-$tag-windows-amd64.zip"
-          Compress-Archive -Path $binFile.FullName -DestinationPath $archive -Force
+          $packageDir = "dist/package"
+          New-Item -ItemType Directory -Force -Path $packageDir | Out-Null
+          Copy-Item -Path $binFile.FullName, LICENSE, README.md, TRADEMARKS.md -Destination $packageDir
+          Compress-Archive -Path "$packageDir/*" -DestinationPath $archive -Force
+          Remove-Item -Path $packageDir -Recurse -Force
           Write-Host "Created $archive"
 
       - name: Upload build artifact

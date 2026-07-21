@@ -2,7 +2,7 @@
   <img src="build/appicon.png" alt="Race Assistant logo" width="120">
 </p>
 
-<h1 align="center">Race Assistant</h1>
+<h1 align="center">Race Assistant™</h1>
 
 <p align="center">
   Simple, dependable race timing for community events.<br>
@@ -14,6 +14,8 @@
   ·
   <a href="https://github.com/ssnodgrass/race-assistant/issues">Report an issue</a>
   ·
+  <a href="SUPPORT.md">Support the project</a>
+  ·
   <a href="docs/companion-race-day-testing.md">Race-day checklist</a>
 </p>
 
@@ -22,6 +24,7 @@
   <img alt="Windows" src="https://img.shields.io/badge/Windows-64--bit-0078D4?logo=windows">
   <img alt="Linux" src="https://img.shields.io/badge/Linux-amd64-FCC624?logo=linux&logoColor=111">
   <img alt="Local first" src="https://img.shields.io/badge/data-local--first-35b85a">
+  <a href="LICENSE"><img alt="License: AGPL v3 or later" src="https://img.shields.io/badge/license-AGPL--3.0--or--later-663399"></a>
 </p>
 
 ![Race Assistant dashboard showing a community race, event count, registration status, and the running reference clock](docs/images/dashboard.png)
@@ -90,6 +93,19 @@ The companion is an installable local web app—there is no separate app-store d
 - Review the local queue, retry synchronization, release roles, and pair the phone with another race session.
 - Use the stable `race-assistant.local` address with the displayed IP address as a fallback.
 
+<table>
+  <tr>
+    <td width="50%">
+      <img src="docs/images/companion-finish-timer.png" alt="Phone Companion finish timer with a large Record Finish button"><br>
+      <sub><strong>Finish Timer:</strong> one deliberate tap captures the next official finish time.</sub>
+    </td>
+    <td width="50%">
+      <img src="docs/images/companion-bib-chute.png" alt="Phone Companion bib chute keypad"><br>
+      <sub><strong>Bib Chute:</strong> enter bib order or preserve the sequence with a placeholder.</sub>
+    </td>
+  </tr>
+</table>
+
 For a two-phone setup and complete acceptance test, follow the [Phone Companion race-day checklist](docs/companion-race-day-testing.md). The [architecture and safeguards document](docs/companion-architecture.md) explains role leases, local storage, clock calibration, and recovery behavior.
 
 ## Getting started
@@ -116,6 +132,18 @@ Release builds are currently unsigned, so Windows or Linux may ask you to confir
 ## Contributing
 
 Bug reports, race-day observations, documentation improvements, and focused pull requests are welcome. When reporting a timing issue, include the Race Assistant version, operating system, timing workflow, and the sequence of actions that produced it. Do not attach a race database containing participant information to a public issue.
+
+## Support the project
+
+Race Assistant is free software, but maintaining dependable race-day software still takes time, equipment, code signing, and careful testing. If the project helps your event, see [ways to support Race Assistant](SUPPORT.md) for the planned GitHub Sponsors tiers, focused contribution ideas, and other ways to help. The Sponsor button will appear on this repository after the GitHub Sponsors profile is approved and published.
+
+Sponsorship supports the project; it does not buy roadmap control, guaranteed support, endorsement, or trademark rights. Paid race timing, setup assistance, and custom development are separate services when available.
+
+## License and trademarks
+
+Copyright © 2026 Scott Snodgrass. Race Assistant is free software licensed under the [GNU Affero General Public License, version 3 or later](LICENSE). You may use it commercially, modify it, and redistribute it under the license's terms. Distributions must provide the corresponding source, and modified versions used over a network must offer their corresponding source to those users. The corresponding source for every official release is available from that release's tag in this repository.
+
+The software license does not grant rights to the Race Assistant name or logo. The **Race Assistant™** name and official logo identify this project and are covered by the [Race Assistant Trademark Policy](TRADEMARKS.md). Forks are welcome, but public modified versions should use their own name and branding and must not imply that they are official releases.
 
 <details>
 <summary><strong>Developer setup and build commands</strong></summary>
