@@ -3,8 +3,8 @@ module github.com/ssnodgrass/race-assistant
 go 1.25.5
 
 require (
-	github.com/hashicorp/mdns v1.0.7
 	github.com/johnfercher/maroto/v2 v2.3.3
+	github.com/libp2p/zeroconf/v2 v2.2.0
 	github.com/phpdave11/gofpdf v1.4.3
 	github.com/pkg/browser v0.0.0-20240102092130-5ac0b6a4141c
 	github.com/wailsapp/wails/v3 v3.0.0-alpha.92

@@ -23,7 +23,7 @@ The in-app camera uses the same secure browser camera API on iOS and Android, bu
 1. With the laptop and phone on the same LAN or hotspot, open `https://race-assistant.local:8443/companion/` and confirm the trusted companion loads.
 2. Note the laptop's current IP, pair the installed `.local` PWA, then change the laptop's DHCP address without closing Race Assistant. Allow up to six seconds and confirm the `.local` PWA reconnects. If the network interface itself changed, restart Race Assistant before testing the fallback URL.
 3. Block multicast or use a network where `.local` does not resolve. Confirm the desktop shows a discovery warning and that its IP fallback setup and pairing QRs work.
-4. Launch the paired PWA once while connected so cache version 7 installs. Close it, stop Race Assistant or disconnect the phone, and reopen the PWA.
+4. Launch the paired PWA once while connected so cache version 8 installs. Close it, stop Race Assistant or disconnect the phone, and reopen the PWA.
 5. Confirm the cached interface appears immediately instead of a black screen, displays **Server disconnected**, retains the local queue, and offers **Retry**.
 6. Restore connectivity and confirm **Retry** reconnects without losing or duplicating queued entries.
 7. On a hotspot or local-only Wi-Fi with no internet access, confirm the companion still reports **Connected** and automatically retries the laptop even if the browser reports that the internet is unavailable.
@@ -38,6 +38,8 @@ Do not remove an old IP-based installation while it contains unsent entries. Res
 4. Generate another pairing grant for a second browser, type its numeric code, and confirm it pairs.
 5. Confirm reusing the QR after its code was used—or reusing the code after its QR was used—is rejected.
 6. Enter incorrect codes repeatedly and confirm the server temporarily rate-limits pairing after ten attempts.
+7. With no current-session entries queued, select **Leave race / pair again**. Confirm the device is revoked, its role is released, and the installed PWA returns to its camera/code pairing screen.
+8. Queue an offline capture and confirm race switching is blocked until that current-session entry is synchronized or deleted through **Review Local Queue**.
 
 ## Test fixture
 

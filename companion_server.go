@@ -23,7 +23,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/hashicorp/mdns"
+	"github.com/libp2p/zeroconf/v2"
 	"github.com/ssnodgrass/race-assistant/models"
 	"github.com/ssnodgrass/race-assistant/services"
 )
@@ -242,7 +242,7 @@ func setCompanionDiscoveryError(service *services.CompanionService, err error) {
 
 func startCompanionMDNS(service *services.CompanionService, hostname string) {
 	go func() {
-		var server *mdns.Server
+		var server *zeroconf.Server
 		currentIP := ""
 		ticker := time.NewTicker(3 * time.Second)
 		defer ticker.Stop()
@@ -250,15 +250,18 @@ func startCompanionMDNS(service *services.CompanionService, hostname string) {
 			ipString := preferredLANIP()
 			if ipString != currentIP || server == nil {
 				if server != nil {
-					_ = server.Shutdown()
+					server.Shutdown()
 					server = nil
 				}
 				if ipString == "127.0.0.1" {
 					setCompanionDiscoveryError(service, fmt.Errorf("no private LAN or hotspot address is available for %s", hostname))
 				} else {
-					zone, err := mdns.NewMDNSService("Race Assistant Companion", "_https._tcp", "local.", strings.TrimSuffix(hostname, ".")+".", 8443, []net.IP{net.ParseIP(ipString)}, []string{"path=/companion/"})
-					if err == nil {
-						server, err = mdns.NewServer(&mdns.Config{Zone: zone, Iface: interfaceForIP(ipString)})
+					iface := interfaceForIP(ipString)
+					var err error
+					if iface == nil {
+						err = fmt.Errorf("could not find the network interface for %s", ipString)
+					} else {
+						server, err = zeroconf.RegisterProxy("Race Assistant Companion", "_https._tcp", "local.", 8443, strings.TrimSuffix(hostname, ".")+".", []string{ipString}, []string{"path=/companion/"}, []net.Interface{*iface}, zeroconf.TTL(120))
 					}
 					if err != nil {
 						setCompanionDiscoveryError(service, fmt.Errorf("could not advertise %s on %s: %w", hostname, ipString, err))
@@ -372,6 +375,19 @@ func startCompanionHTTPS(frontendFS fs.FS, service *services.CompanionService, p
 		pairLimiter.clear(clientKey)
 		http.SetCookie(w, &http.Cookie{Name: "race_companion", Value: token, Path: "/", Secure: true, HttpOnly: true, SameSite: http.SameSiteStrictMode, MaxAge: 86400})
 		writeJSON(w, state)
+	})
+	mux.HandleFunc("/api/companion/unpair", func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodPost {
+			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+			return
+		}
+		err := service.Unpair(companionCookie(r))
+		if err != nil && !errors.Is(err, services.ErrCompanionUnauthorized) {
+			writeCompanionError(w, err, http.StatusInternalServerError)
+			return
+		}
+		http.SetCookie(w, &http.Cookie{Name: "race_companion", Value: "", Path: "/", Secure: true, HttpOnly: true, SameSite: http.SameSiteStrictMode, MaxAge: -1, Expires: time.Unix(1, 0)})
+		w.WriteHeader(http.StatusNoContent)
 	})
 	mux.HandleFunc("/api/companion/state", func(w http.ResponseWriter, r *http.Request) {
 		token := companionCookie(r)

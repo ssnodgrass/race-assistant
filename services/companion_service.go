@@ -434,6 +434,20 @@ func (s *CompanionService) RevokeDevice(deviceID string) error {
 	if s.db == nil {
 		return fmt.Errorf("no database connection")
 	}
+	return s.revokeDeviceLocked(deviceID)
+}
+
+func (s *CompanionService) Unpair(token string) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	id, err := s.authenticateLocked(token)
+	if err != nil {
+		return err
+	}
+	return s.revokeDeviceLocked(id.DeviceID)
+}
+
+func (s *CompanionService) revokeDeviceLocked(deviceID string) error {
 	tx, err := s.db.Begin()
 	if err != nil {
 		return err

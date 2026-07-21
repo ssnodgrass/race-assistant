@@ -18,7 +18,7 @@ The phone keeps an authenticated Server-Sent Events stream open to the laptop fo
 
 - Port `8080` serves only the certificate/profile bootstrap page.
 - Port `8443` serves the PWA and companion API over HTTPS.
-- Race Assistant advertises `race-assistant.local` over multicast DNS and uses that stable hostname for installation and pairing. The advertisement is refreshed if the preferred private LAN address changes while the application is running.
+- Race Assistant advertises `race-assistant.local` over multicast DNS and uses that stable hostname for installation and pairing. The responder probes for conflicts and sends cache-flush announcements when it starts; it restarts and announces again if the preferred private LAN address changes while the application is running.
 - Race Assistant creates a persistent local CA under the user's application configuration directory and a short-lived server certificate valid for both `race-assistant.local` and the startup LAN address.
 - The desktop displays the CA fingerprint for out-of-band verification.
 - The desktop also displays startup-IP setup and pairing fallbacks. An app installed through the IP fallback remains bound to that IP and may require reinstallation after an address change.
@@ -38,6 +38,8 @@ Migration `0003_companion.sql` adds capture metadata to timing pulses and create
 The PWA caches its application shell and keeps queued entries in IndexedDB. Pairing, cached race state, calibration, and the held role are retained locally so a temporary laptop restart or Wi-Fi interruption does not erase captures. Entries belonging to an older session are isolated and require an explicit operator discard; they are never submitted to the current session.
 
 The on-phone **Local Queue** view lists every unsent entry with its type, capture time, abbreviated session ID, and sync eligibility. Operators can delete one record, all records from older sessions, or the complete unsent queue. Deletion always requires confirmation.
+
+The on-phone **Leave race / pair again** action revokes that device, releases its role, clears its local authorization, and returns to the camera/code pairing screen. It is blocked while the current session has unsent captures so switching races cannot strand them.
 
 ## Timing behavior
 

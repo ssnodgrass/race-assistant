@@ -348,3 +348,25 @@ func TestCompanionNumericPairingCodeIsEightDigitsAndSingleUse(t *testing.T) {
 		t.Fatal("numeric code remained usable after its matching QR token was consumed")
 	}
 }
+
+func TestCompanionUnpairRevokesDeviceAndReleasesRole(t *testing.T) {
+	service, _, race, _, _ := setupCompanionTest(t)
+	session, err := service.StartSession(race.ID, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	first := pairCompanion(t, service, session.ID, "First phone")
+	second := pairCompanion(t, service, session.ID, "Second phone")
+	if err := service.AcquireRole(first, "timer"); err != nil {
+		t.Fatal(err)
+	}
+	if err := service.Unpair(first); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := service.Authenticate(first); err != ErrCompanionUnauthorized {
+		t.Fatalf("unpaired token remained authorized: %v", err)
+	}
+	if err := service.AcquireRole(second, "timer"); err != nil {
+		t.Fatalf("unpair did not release role: %v", err)
+	}
+}
