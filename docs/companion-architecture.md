@@ -12,7 +12,7 @@ The Phone Companion is a local-only PWA served by the Race Assistant laptop. It 
 6. The outbox replays in capture order. A stable `request_id` makes retries idempotent, and a `session_id` prevents entries from an old race replaying into a new one.
 7. Finish captures append to `timing_pulses`; bib captures append independently to `chute_assignments`. In common-chute mode their shared global place reconciles them on the results page, where the participant's event determines event place. In event mode both streams are written directly to the selected event.
 
-The phone keeps an authenticated Server-Sent Events stream open to the laptop for state and liveness. The server emits state once per second; if the phone receives nothing for 3.5 seconds it reports **Disconnected**, even when the operating system still considers cellular data online. Commands continue to use the idempotent HTTP API, so a WebSocket protocol is unnecessary.
+The phone keeps an authenticated Server-Sent Events stream open to the laptop for state and liveness. The server emits state once per second; if a paired phone receives nothing for 3.5 seconds it reports **Disconnected**, even when the operating system still considers cellular data online. The unpaired screen uses a slower API health check and a longer timeout so expected authorization responses do not make its connection warning flash. Commands continue to use the idempotent HTTP API, so a WebSocket protocol is unnecessary.
 
 ## Local networking and trust
 
