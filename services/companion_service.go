@@ -501,7 +501,14 @@ func (s *CompanionService) Submit(token string, entries []models.CompanionEntry)
 
 func (s *CompanionService) requireLeaseLocked(id companionIdentity, role string) error {
 	var holder string
-	if err := s.db.QueryRow("SELECT device_id FROM companion_role_leases WHERE session_id=? AND role=?", id.Session.ID, role).Scan(&holder); err != nil || holder != id.DeviceID {
+	err := s.db.QueryRow("SELECT device_id FROM companion_role_leases WHERE session_id=? AND role=?", id.Session.ID, role).Scan(&holder)
+	if err == sql.ErrNoRows {
+		return fmt.Errorf("this device does not hold the companion %s role; reacquire it before syncing", role)
+	}
+	if err != nil {
+		return err
+	}
+	if holder != id.DeviceID {
 		return ErrCompanionLease
 	}
 	return nil

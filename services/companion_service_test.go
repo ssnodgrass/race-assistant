@@ -396,6 +396,36 @@ func TestCompanionRoleIsExclusive(t *testing.T) {
 	}
 }
 
+func TestCompanionQueuedStartCanSyncAfterRoleIsReacquired(t *testing.T) {
+	service, _, race, _, _ := setupCompanionTest(t)
+	session, err := service.StartSession(race.ID, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	starter := pairCompanion(t, service, session.ID, "Remote starter")
+	if err = service.AcquireRole(starter, "start"); err != nil {
+		t.Fatal(err)
+	}
+	capturedAt := time.Now().Truncate(time.Millisecond)
+	entry := companionEntry("released-role-start", "start", "", capturedAt.UnixMilli())
+	if err = service.ClearRole(session.ID, "start"); err != nil {
+		t.Fatal(err)
+	}
+	if _, err = service.Submit(starter, []models.CompanionEntry{entry}); err == nil || !strings.Contains(err.Error(), "reacquire it before syncing") {
+		t.Fatalf("expected actionable missing-role error, got %v", err)
+	}
+	if err = service.AcquireRole(starter, "start"); err != nil {
+		t.Fatal(err)
+	}
+	acks, err := service.Submit(starter, []models.CompanionEntry{entry})
+	if err != nil {
+		t.Fatalf("queued start did not sync after reacquiring its role: %v", err)
+	}
+	if len(acks) != 1 || acks[0].Status != "accepted" {
+		t.Fatalf("unexpected acknowledgement after role recovery: %+v", acks)
+	}
+}
+
 func TestParticipantDuplicateTriggerAndSessionPreflight(t *testing.T) {
 	service, _, race, e5, _ := setupCompanionTest(t)
 	_, err := service.db.Exec(`INSERT INTO participants(race_id,event_id,bib_number,first_name,last_name,gender,age_on_race_day) VALUES(?,?,?,?,?,?,?)`, race.ID, e5.ID, "101", "Duplicate", "Runner", "F", 20)

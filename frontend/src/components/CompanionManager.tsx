@@ -52,6 +52,14 @@ export function CompanionManager({ race, events, onRaceRefresh }: Props) {
     setPairing(null); setState(null);
   };
 
+  const forceReleaseRole = async (role: string, deviceName: string) => {
+    if (!state?.session || !window.confirm(`Force release the ${role} role from ${deviceName}? Any unsent ${role} entries on that phone will remain queued until the phone reacquires this role.`)) return;
+    try {
+      await CompanionService.ClearRole(state.session.id, role);
+      await load();
+    } catch (e) { setError(String(e)); }
+  };
+
   const roleColor = (role: string) => role === 'timer' ? 'var(--success)' : role === 'bib' ? 'var(--accent)' : 'var(--warning)';
 
   return <div style={{ display: 'flex', flexDirection: 'column', minHeight: '100%', flex: '0 0 auto', paddingBottom: 2, gap: 'var(--space-lg)' }}>
@@ -105,7 +113,7 @@ export function CompanionManager({ race, events, onRaceRefresh }: Props) {
             <td><strong>{d.name}</strong>{d.revoked && <span className="badge" style={{ marginLeft: 8, background: 'var(--danger)' }}>REVOKED</span>}</td>
             <td>{d.role ? <span className="badge" style={{ background: roleColor(d.role), color: 'white' }}>{d.role.toUpperCase()}</span> : '—'}</td>
             <td>{new Date(d.last_seen_at_unix_ms).toLocaleTimeString()}</td>
-            <td style={{ textAlign: 'right' }}>{d.role && <button style={{ marginRight: 8, background: '#444' }} onClick={() => CompanionService.ClearRole(state.session!.id, d.role).then(load)}>Release role</button>} {!d.revoked && <button style={{ background: 'var(--danger)' }} onClick={() => CompanionService.RevokeDevice(d.id).then(load)}>Revoke</button>}</td>
+            <td style={{ textAlign: 'right' }}>{d.role && <button style={{ marginRight: 8, background: '#444' }} onClick={() => forceReleaseRole(d.role, d.name)}>Force release role</button>} {!d.revoked && <button style={{ background: 'var(--danger)' }} onClick={() => CompanionService.RevokeDevice(d.id).then(load)}>Revoke</button>}</td>
           </tr>)}{state.devices.length === 0 && <tr><td colSpan={4} className="text-dim" style={{ textAlign: 'center', padding: 40 }}>No phones paired yet.</td></tr>}</tbody>
         </table>
       </div>
