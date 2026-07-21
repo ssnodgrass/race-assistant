@@ -255,7 +255,7 @@ function App() {
                 <CreateRace onCreated={(r) => { setSelectedRace(r); setView('race_detail'); loadRaces(); }} onCancel={() => setView('list')} />
                 )}
                 {selectedRace && (
-                <div style={{ flexGrow: 1, display: 'flex', flexDirection: 'column', minHeight: 0 }}>
+                <div style={{ flexGrow: 1, display: 'flex', flexDirection: 'column', minHeight: 0, overflowY: view === 'companion' ? 'auto' : undefined, overscrollBehavior: view === 'companion' ? 'contain' : undefined }}>
                     {view === 'race_detail' && <RaceDashboard race={selectedRace} events={events} participants={participants} onRefresh={refreshActiveRace} />}
                     {view === 'manage_events' && <EventManagement raceID={selectedRace.id} events={events} onRefresh={() => loadRaceDetails(selectedRace.id)} />}
                     {view === 'award_config' && <AwardConfigView events={events} />}

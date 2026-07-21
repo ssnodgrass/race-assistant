@@ -54,7 +54,7 @@ export function CompanionManager({ race, events, onRaceRefresh }: Props) {
 
   const roleColor = (role: string) => role === 'timer' ? 'var(--success)' : role === 'bib' ? 'var(--accent)' : 'var(--warning)';
 
-  return <div style={{ display: 'flex', flexDirection: 'column', height: '100%', minHeight: 0, overflowY: 'auto', overscrollBehavior: 'contain', gap: 'var(--space-lg)' }}>
+  return <div style={{ display: 'flex', flexDirection: 'column', minHeight: '100%', flex: '0 0 auto', paddingBottom: 2, gap: 'var(--space-lg)' }}>
     <div className="flex-between">
       <div><h1 style={{ marginBottom: 4 }}>Phone Companion</h1><div className="text-dim">Secure phone timing and bib entry for {race.name}</div></div>
       {state?.session ? <button style={{ background: 'var(--danger)' }} onClick={stopSession}>Stop Session</button> : <div style={{ display: 'flex', alignItems: 'end', gap: 10 }}><label style={{ minWidth: 240 }}><span className="text-dim" style={{ display: 'block', marginBottom: 4 }}>RECORDING SCOPE</span><select value={selectedEventID} onChange={event => setSelectedEventID(Number(event.target.value))}><option value={0}>Common Chute — All Events</option>{events.map(event => <option key={event.id} value={event.id}>{event.name}</option>)}</select></label><button onClick={startSession}>Start Session</button></div>}

@@ -340,7 +340,11 @@ func startCompanionHTTPS(frontendFS fs.FS, service *services.CompanionService, p
 	})
 	mux.Handle("/assets/", files)
 	mux.Handle("/companion.webmanifest", files)
-	mux.Handle("/companion-sw.js", files)
+	mux.HandleFunc("/companion-sw.js", func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Cache-Control", "no-cache")
+		w.Header().Set("Service-Worker-Allowed", "/companion/")
+		files.ServeHTTP(w, r)
+	})
 	mux.HandleFunc("/api/companion/pair", func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != "POST" {
 			http.Error(w, "method not allowed", 405)

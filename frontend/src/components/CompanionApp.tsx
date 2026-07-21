@@ -132,7 +132,7 @@ export function CompanionApp() {
   const [orphaned,setOrphaned]=useState(0);
   const [queuedEntries,setQueuedEntries]=useState<Entry[]>([]);
   const [queueOpen,setQueueOpen]=useState(false);
-  const [online,setOnline]=useState(navigator.onLine);
+  const [online,setOnline]=useState(false);
   const [message,setMessage]=useState('');
   const [lastAck,setLastAck]=useState<DisplayAck|null>(null);
   const [bib,setBib]=useState('');
@@ -145,12 +145,15 @@ export function CompanionApp() {
   const calRef=useRef<Calibration|null>(cal);
   const stateRef=useRef<State|null>(state);
   const lastServerContact=useRef(0);
+  const lastReconnectAttempt=useRef(0);
 
   const api=async(path:string,init?:RequestInit)=>{
     const controller=new AbortController();
     const timeout=window.setTimeout(()=>controller.abort(),4000);
     try{
       const response=await fetch(path,{...init,signal:init?.signal||controller.signal,credentials:'same-origin',headers:{'Content-Type':'application/json',...(init?.headers||{})}});
+      lastServerContact.current=Date.now();
+      setOnline(true);
       if(!response.ok){const error=new Error(await response.text()||response.statusText) as Error & {status:number};error.status=response.status;throw error}
       return response.status===204?null:response.json();
     }finally{clearTimeout(timeout)}
@@ -159,7 +162,7 @@ export function CompanionApp() {
   const refreshPending=async()=>{const entries=(await allEntries()).sort((left,right)=>left.client_captured_at_unix_ms-right.client_captured_at_unix_ms);const sessionID=stateRef.current?.session?.id;setQueuedEntries(entries);setPending(entries.filter(entry=>entry.session_id===sessionID).length);setOrphaned(entries.filter(entry=>entry.session_id!==sessionID).length)};
   const acceptState=(data:State)=>{lastServerContact.current=Date.now();stateRef.current=data;setState(data);localStorage.setItem(STATE_KEY,JSON.stringify(data));localStorage.setItem(PAIRED_KEY,'true');setPaired(true);pairedRef.current=true;setOnline(true);void refreshPending()};
   const clearAuthorization=()=>{pairedRef.current=false;setPaired(false);localStorage.removeItem(PAIRED_KEY);localStorage.removeItem(ROLE_KEY);setHeldRole(null)};
-  const loadState=async()=>{try{acceptState(await api('/api/companion/state'));return true}catch(e){if((e as {status?:number}).status===401)clearAuthorization();else{setOnline(false);if(!pairedRef.current)setPaired(false)}return false}};
+  const loadState=async()=>{try{acceptState(await api('/api/companion/state'));return true}catch(e){const status=(e as {status?:number}).status;if(status===401)clearAuthorization();else if(!status){setOnline(false);if(!pairedRef.current)setPaired(false)}return false}};
 
   const calibrate=async()=>{
     const samples:{offset:number;rtt:number}[]=[];
@@ -173,11 +176,11 @@ export function CompanionApp() {
   };
 
   const flush=async()=>{
-    if(flushing.current||!navigator.onLine||!pairedRef.current)return;
+    if(flushing.current||!pairedRef.current)return;
     flushing.current=true;
     try{
       const sessionID=stateRef.current?.session?.id;
-      if(!sessionID)return;
+      if(!sessionID){await loadState();return}
       const queued=(await allEntries()).filter(entry=>entry.session_id===sessionID).sort(
         (left,right)=>left.client_captured_at_unix_ms-right.client_captured_at_unix_ms,
       );
@@ -204,8 +207,8 @@ export function CompanionApp() {
     }catch(e){const status=(e as {status?:number}).status;if(!status){setOnline(false);setMessage('SAVED OFFLINE · WAITING FOR LAPTOP')}else{setMessage(`QUEUED · ${String(e)}`)}}finally{flushing.current=false}
   };
 
-  useEffect(()=>{history.replaceState(null,'',location.pathname);let refreshing=false;const reloadForUpdate=()=>{if(!refreshing){refreshing=true;location.reload()}};if('serviceWorker'in navigator){const hadController=Boolean(navigator.serviceWorker.controller);if(hadController)navigator.serviceWorker.addEventListener('controllerchange',reloadForUpdate);navigator.serviceWorker.register('/companion-sw.js',{scope:'/companion/'}).then(registration=>registration.update()).catch(()=>{})}loadState();refreshPending();const timer=setInterval(()=>{if(Date.now()-lastServerContact.current>3500)setOnline(false);flush()},1000);const on=()=>flush();const off=()=>setOnline(false);addEventListener('online',on);addEventListener('offline',off);return()=>{clearInterval(timer);removeEventListener('online',on);removeEventListener('offline',off);navigator.serviceWorker?.removeEventListener('controllerchange',reloadForUpdate)}},[]);
-  useEffect(()=>{if(!paired)return;const stream=new EventSource('/api/companion/events',{withCredentials:true});const receiveState=(event:MessageEvent)=>{try{acceptState(JSON.parse(event.data) as State)}catch{setOnline(false)}};const unauthorized=()=>{stream.close();clearAuthorization()};stream.addEventListener('state',receiveState as EventListener);stream.addEventListener('unauthorized',unauthorized);stream.addEventListener('unavailable',()=>setOnline(false));stream.onerror=()=>{if(Date.now()-lastServerContact.current>3500)setOnline(false)};return()=>stream.close()},[paired]);
+  useEffect(()=>{history.replaceState(null,'',location.pathname);let refreshing=false;const reloadForUpdate=()=>{if(!refreshing){refreshing=true;location.reload()}};if('serviceWorker'in navigator){const hadController=Boolean(navigator.serviceWorker.controller);if(hadController)navigator.serviceWorker.addEventListener('controllerchange',reloadForUpdate);navigator.serviceWorker.register('/companion-sw.js',{scope:'/companion/'}).then(registration=>registration.update()).catch(()=>{});navigator.storage?.persist?.().catch(()=>{})}lastReconnectAttempt.current=Date.now();loadState();refreshPending();const reconnect=()=>{lastReconnectAttempt.current=Date.now();if(pairedRef.current)void flush();else void loadState()};const timer=setInterval(()=>{const now=Date.now();if(now-lastServerContact.current>3500){setOnline(false);if(now-lastReconnectAttempt.current>4000)reconnect()}},1000);const on=()=>reconnect();addEventListener('online',on);return()=>{clearInterval(timer);removeEventListener('online',on);navigator.serviceWorker?.removeEventListener('controllerchange',reloadForUpdate)}},[]);
+  useEffect(()=>{if(!paired)return;const stream=new EventSource('/api/companion/events',{withCredentials:true});const receiveState=(event:MessageEvent)=>{try{acceptState(JSON.parse(event.data) as State)}catch{setOnline(false)}};const serverEvent=()=>{lastServerContact.current=Date.now();setOnline(true)};const unauthorized=()=>{serverEvent();stream.close();clearAuthorization()};stream.addEventListener('state',receiveState as EventListener);stream.addEventListener('unauthorized',unauthorized);stream.addEventListener('unavailable',()=>{serverEvent();setMessage('COMPANION SESSION UNAVAILABLE')});stream.onerror=()=>{if(Date.now()-lastServerContact.current>3500)setOnline(false)};return()=>stream.close()},[paired]);
   useEffect(()=>{if(paired)calibrate().catch(()=>{});},[paired]);
   useEffect(()=>{const timer=setInterval(()=>setTick(Date.now()),50);return()=>clearInterval(timer)},[]);
   useEffect(()=>{if(!heldRole||!('wakeLock'in navigator))return;let lock:any;(navigator as any).wakeLock.request('screen').then((v:any)=>lock=v).catch(()=>{});return()=>lock?.release()},[heldRole]);

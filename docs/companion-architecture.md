@@ -24,7 +24,7 @@ The phone keeps an authenticated Server-Sent Events stream open to the laptop fo
 - The desktop also displays startup-IP setup and pairing fallbacks. An app installed through the IP fallback remains bound to that IP and may require reinstallation after an address change.
 - A dedicated travel router or stable laptop hotspot is recommended. Multicast DNS works only when the phone and laptop share a local link that permits multicast UDP 5353; guest isolation, some phone hotspots, VPNs, and restrictive firewalls may block it. Restart Race Assistant after changing networks if the IP fallback is needed so its certificate covers the new address.
 
-The service worker returns the cached application shell before attempting a network refresh. A paired phone therefore opens immediately with its last-known state and local queue even when the server is unavailable. The UI identifies the installed origin, reports the disconnection, and offers an explicit retry. Browser origin isolation still prevents an installation or IndexedDB queue from moving between an IP URL and the `.local` URL.
+The service worker returns the cached application shell before attempting a network refresh. A paired phone therefore opens immediately with its last-known state and local queue even when the server is unavailable. The UI identifies the installed origin, reports the disconnection, and offers an explicit retry. Connectivity is based on actual companion API responses rather than `navigator.onLine`, because a phone may report no internet while its local Wi-Fi connection to the laptop is healthy. Browser origin isolation still prevents an installation or IndexedDB queue from moving between an IP URL and the `.local` URL.
 
 ## Persistence
 
