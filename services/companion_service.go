@@ -189,7 +189,11 @@ func (s *CompanionService) CreatePairing(sessionID string) (models.CompanionPair
 	s.pairings[hashToken(token)] = grant
 	s.pairings[hashToken(code)] = grant
 	url := strings.TrimRight(s.setup.HTTPSURL, "/") + "/companion/#pair=" + token
-	return models.CompanionPairing{Token: token, Code: code, URL: url, ExpiresAt: expires}, nil
+	fallbackURL := ""
+	if s.setup.FallbackHTTPSURL != "" {
+		fallbackURL = strings.TrimRight(s.setup.FallbackHTTPSURL, "/") + "/companion/#pair=" + token
+	}
+	return models.CompanionPairing{Token: token, Code: code, URL: url, FallbackURL: fallbackURL, ExpiresAt: expires}, nil
 }
 
 func (s *CompanionService) deletePairingGrantLocked(grant pairingGrant) {

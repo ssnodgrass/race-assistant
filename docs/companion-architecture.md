@@ -18,9 +18,13 @@ The phone keeps an authenticated Server-Sent Events stream open to the laptop fo
 
 - Port `8080` serves only the certificate/profile bootstrap page.
 - Port `8443` serves the PWA and companion API over HTTPS.
-- Race Assistant creates a persistent local CA under the user's application configuration directory and a short-lived server certificate for the selected private LAN address.
+- Race Assistant advertises `race-assistant.local` over multicast DNS and uses that stable hostname for installation and pairing. The advertisement is refreshed if the preferred private LAN address changes while the application is running.
+- Race Assistant creates a persistent local CA under the user's application configuration directory and a short-lived server certificate valid for both `race-assistant.local` and the startup LAN address.
 - The desktop displays the CA fingerprint for out-of-band verification.
-- A dedicated travel router or stable laptop hotspot is recommended. Restart Race Assistant after changing networks so its certificate and QR codes use the new address.
+- The desktop also displays startup-IP setup and pairing fallbacks. An app installed through the IP fallback remains bound to that IP and may require reinstallation after an address change.
+- A dedicated travel router or stable laptop hotspot is recommended. Multicast DNS works only when the phone and laptop share a local link that permits multicast UDP 5353; guest isolation, some phone hotspots, VPNs, and restrictive firewalls may block it. Restart Race Assistant after changing networks if the IP fallback is needed so its certificate covers the new address.
+
+The service worker returns the cached application shell before attempting a network refresh. A paired phone therefore opens immediately with its last-known state and local queue even when the server is unavailable. The UI identifies the installed origin, reports the disconnection, and offers an explicit retry. Browser origin isolation still prevents an installation or IndexedDB queue from moving between an IP URL and the `.local` URL.
 
 ## Persistence
 

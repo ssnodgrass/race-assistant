@@ -3,6 +3,7 @@ module github.com/ssnodgrass/race-assistant
 go 1.25.5
 
 require (
+	github.com/hashicorp/mdns v1.0.7
 	github.com/johnfercher/maroto/v2 v2.3.3
 	github.com/phpdave11/gofpdf v1.4.3
 	github.com/pkg/browser v0.0.0-20240102092130-5ac0b6a4141c
@@ -48,6 +49,7 @@ require (
 	github.com/mattn/go-colorable v0.1.14 // indirect
 	github.com/mattn/go-isatty v0.0.20 // indirect
 	github.com/mattn/go-runewidth v0.0.19 // indirect
+	github.com/miekg/dns v1.1.72 // indirect
 	github.com/ncruces/go-strftime v1.0.0 // indirect
 	github.com/pdfcpu/pdfcpu v0.6.0 // indirect
 	github.com/pjbgf/sha1cd v0.6.0 // indirect
@@ -63,9 +65,12 @@ require (
 	golang.org/x/crypto v0.50.0 // indirect
 	golang.org/x/exp v0.0.0-20260410095643-746e56fc9e2f // indirect
 	golang.org/x/image v0.40.0 // indirect
+	golang.org/x/mod v0.35.0 // indirect
 	golang.org/x/net v0.53.0 // indirect
+	golang.org/x/sync v0.20.0 // indirect
 	golang.org/x/sys v0.43.0 // indirect
 	golang.org/x/text v0.37.0 // indirect
+	golang.org/x/tools v0.44.0 // indirect
 	gopkg.in/warnings.v0 v0.1.2 // indirect
 	gopkg.in/yaml.v2 v2.4.0 // indirect
 	modernc.org/libc v1.67.6 // indirect

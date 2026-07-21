@@ -159,7 +159,7 @@ export function CompanionApp() {
   const refreshPending=async()=>{const entries=(await allEntries()).sort((left,right)=>left.client_captured_at_unix_ms-right.client_captured_at_unix_ms);const sessionID=stateRef.current?.session?.id;setQueuedEntries(entries);setPending(entries.filter(entry=>entry.session_id===sessionID).length);setOrphaned(entries.filter(entry=>entry.session_id!==sessionID).length)};
   const acceptState=(data:State)=>{lastServerContact.current=Date.now();stateRef.current=data;setState(data);localStorage.setItem(STATE_KEY,JSON.stringify(data));localStorage.setItem(PAIRED_KEY,'true');setPaired(true);pairedRef.current=true;setOnline(true);void refreshPending()};
   const clearAuthorization=()=>{pairedRef.current=false;setPaired(false);localStorage.removeItem(PAIRED_KEY);localStorage.removeItem(ROLE_KEY);setHeldRole(null)};
-  const loadState=async()=>{try{acceptState(await api('/api/companion/state'))}catch(e){if((e as {status?:number}).status===401)clearAuthorization();else{setOnline(false);if(!pairedRef.current)setPaired(false)}}};
+  const loadState=async()=>{try{acceptState(await api('/api/companion/state'));return true}catch(e){if((e as {status?:number}).status===401)clearAuthorization();else{setOnline(false);if(!pairedRef.current)setPaired(false)}return false}};
 
   const calibrate=async()=>{
     const samples:{offset:number;rtt:number}[]=[];
@@ -212,6 +212,7 @@ export function CompanionApp() {
 
   const acceptPairingScan=useCallback((value:string)=>{const credential=pairingCredentialFrom(value);setPairCredential(credential);setPairCode('');setScannerOpen(false);setMessage('PAIRING QR SCANNED · NAME THIS DEVICE AND PAIR')},[]);
   const pair=async(credential=pairCredential||pairCode)=>{if(pairingBusy)return;try{setPairingBusy(true);setMessage('PAIRING…');const data=await api('/api/companion/pair',{method:'POST',body:JSON.stringify({token:pairingCredentialFrom(credential),name})});localStorage.setItem('companion-name',name);acceptState(data);setMessage('PAIRED');await refreshPending();await calibrate()}catch(e){setMessage(String(e).replace(/^Error:\s*/,''))}finally{setPairingBusy(false)}};
+  const retryConnection=async()=>{setMessage('RECONNECTING…');if(await loadState()){setMessage('CONNECTED');if(pairedRef.current){calibrate().catch(()=>{});void flush()}}else setMessage(`CANNOT REACH ${location.host}`)};
   const acquire=async(role:Role)=>{try{await api(`/api/companion/role/${role}`,{method:'PUT'});localStorage.setItem(ROLE_KEY,role);setHeldRole(role);setActive(role);if(role==='start'){setArmed(false);setMessage('START RESERVED · CALIBRATING…');try{await calibrate();setMessage('START READY · SAFE TO LEAVE WI-FI')}catch{setOnline(false);setMessage('START RESERVED · RECONNECT TO CALIBRATE')}}else setMessage(`${role.toUpperCase()} READY`)}catch(e){setMessage(String(e))}};
   const release=async()=>{if(!heldRole||pending)return;await api(`/api/companion/role/${heldRole}`,{method:'DELETE'});localStorage.removeItem(ROLE_KEY);setHeldRole(null);setArmed(false);setMessage('ROLE RELEASED')};
 
@@ -248,6 +249,7 @@ export function CompanionApp() {
     <div className="companion-card pairing-card">
       <h1>Race Assistant</h1>
       <p>Pair this browser or installed app with the current race session.</p>
+      {!online&&<div className="connection-warning"><strong>Race Assistant is unreachable</strong><span>This app belongs to <code>{location.host}</code>. Confirm the phone is on the laptop network. If the laptop address changed, use the stable or fallback address shown on its Phone Companion screen.</span><button onClick={()=>void retryConnection()}>Retry Connection</button></div>}
       <label className="pair-label">DEVICE NAME<input value={name} placeholder="Race phone" onChange={e=>setName(e.target.value)} autoComplete="off"/></label>
       {pairCredential?<>
         <div className="pair-ready">✓ Pairing QR ready</div>
@@ -270,6 +272,7 @@ export function CompanionApp() {
     {queuePanel}
     <header><div><strong>{state?.race_name}</strong><small>{state?.event_name} · {online?'CONNECTED':`OFFLINE · ${pending} PENDING`}</small></div><div className="companion-clock">{elapsed}</div></header>
     <nav>{(['start','timer','bib'] as Role[]).map(role=><button key={role} className={active===role?'active':''} onClick={()=>{if(role!==active){setMessage('');setArmed(false)}setActive(role)}}>{role==='start'?'Start':role==='timer'?'Finish Timer':'Bib Chute'}</button>)}</nav>
+    {!online&&<div className="connection-warning compact"><div><strong>Server disconnected</strong><span>Captures remain stored on this device. Connected address: <code>{location.host}</code></span></div><button onClick={()=>void retryConnection()}>Retry</button></div>}
     <main style={{overflowY:'auto',flexDirection:'column',WebkitOverflowScrolling:'touch',overscrollBehavior:'contain'}}>
       {active==='start'&&state?.race_start?<section className="companion-center" style={{flex:'1 0 auto'}}><div style={{fontSize:'4rem'}}>✓</div><h2 style={{color:'#70e094',margin:0}}>Official Start Recorded</h2><div style={{font:'800 1.5rem monospace'}}>{new Date(state.race_start).toLocaleTimeString()}</div><p>The laptop accepted the official start and automatically released this phone's Start role.</p></section>:
       heldRole!==active?<div className="companion-center role-gate" style={{flex:'1 0 auto'}}><h2>{active==='start'?'Start Line':active==='timer'?'Finish Timer':'Bib Chute'}</h2><p>{online?'Acquire this exclusive role before recording. For a remote start, acquire and calibrate before leaving the laptop network.':'Role acquisition requires the laptop. Reconnect to its network, acquire Start, then leave while keeping this PWA ready.'}</p><button disabled={!online} onClick={()=>acquire(active)}>Acquire {active} role</button></div>:

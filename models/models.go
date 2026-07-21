@@ -120,17 +120,23 @@ type CompanionState struct {
 }
 
 type CompanionPairing struct {
-	Token     string `json:"token"`
-	Code      string `json:"code"`
-	URL       string `json:"url"`
-	ExpiresAt int64  `json:"expires_at_unix_ms"`
+	Token       string `json:"token"`
+	Code        string `json:"code"`
+	URL         string `json:"url"`
+	FallbackURL string `json:"fallback_url"`
+	ExpiresAt   int64  `json:"expires_at_unix_ms"`
 }
 
 type CompanionSetup struct {
-	HTTPSURL      string `json:"https_url"`
-	BootstrapURL  string `json:"bootstrap_url"`
-	CAFingerprint string `json:"ca_fingerprint"`
-	ServerError   string `json:"server_error"`
+	HTTPSURL             string `json:"https_url"`
+	BootstrapURL         string `json:"bootstrap_url"`
+	FallbackHTTPSURL     string `json:"fallback_https_url"`
+	FallbackBootstrapURL string `json:"fallback_bootstrap_url"`
+	StableHostname       string `json:"stable_hostname"`
+	LANIP                string `json:"lan_ip"`
+	CAFingerprint        string `json:"ca_fingerprint"`
+	DiscoveryError       string `json:"discovery_error"`
+	ServerError          string `json:"server_error"`
 }
 
 type CompanionEntry struct {

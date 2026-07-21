@@ -1,11 +1,11 @@
 # Phone Companion Race-Day Test
 
-The companion is designed for one common finish chute shared by events with a single race start. The laptop remains the database of record. Use a laptop hotspot or travel router so its IP address remains stable from setup through the end of the race.
+The companion is designed for one common finish chute shared by events with a single race start. The laptop remains the database of record. Use a laptop hotspot or travel router so the devices remain on one local network through the end of the race.
 
 ## One-time phone trust setup
 
 1. Open a race database and select a race.
-2. Open **Phone Companion** and scan **Trust this laptop**.
+2. Open **Phone Companion** and scan **Trust this laptop**. Prefer the `race-assistant.local` QR. If it does not open, expand the IP fallback and use that QR for this network.
 3. Verify the certificate fingerprint on the phone matches the laptop.
 4. On iPhone, install the downloaded profile, then open **Settings → General → About → Certificate Trust Settings** and enable full trust for Race Assistant.
 5. On Android, install the downloaded CA certificate through the device security/credential settings.
@@ -17,6 +17,17 @@ The companion is designed for one common finish chute shared by events with a si
 Only the public CA certificate is downloaded. The CA private key remains in the laptop's Race Assistant configuration directory. Resetting that CA requires repeating phone trust setup.
 
 The in-app camera uses the same secure browser camera API on iOS and Android, but permission screens and camera selection are controlled by each operating system. If camera access is denied or unavailable, use the numeric code. A pairing QR opened in Firefox, Safari, or the system Camera app does not pair an already-installed PWA because each app has its own browser storage.
+
+## Network and offline-shell test
+
+1. With the laptop and phone on the same LAN or hotspot, open `https://race-assistant.local:8443/companion/` and confirm the trusted companion loads.
+2. Note the laptop's current IP, pair the installed `.local` PWA, then change the laptop's DHCP address without closing Race Assistant. Allow up to six seconds and confirm the `.local` PWA reconnects. If the network interface itself changed, restart Race Assistant before testing the fallback URL.
+3. Block multicast or use a network where `.local` does not resolve. Confirm the desktop shows a discovery warning and that its IP fallback setup and pairing QRs work.
+4. Launch the paired PWA once while connected so cache version 6 installs. Close it, stop Race Assistant or disconnect the phone, and reopen the PWA.
+5. Confirm the cached interface appears immediately instead of a black screen, displays **Server disconnected**, retains the local queue, and offers **Retry**.
+6. Restore connectivity and confirm **Retry** reconnects without losing or duplicating queued entries.
+
+Do not remove an old IP-based installation while it contains unsent entries. Restore that IP long enough to sync or review its local queue first; browser security prevents moving IndexedDB data to the stable-hostname installation.
 
 ## Pairing-method test
 

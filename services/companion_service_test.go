@@ -36,7 +36,7 @@ func setupCompanionTest(t *testing.T) (*CompanionService, *TimingService, models
 	}
 	companion := NewCompanionService()
 	companion.SetDB(raceRepo.GetDB())
-	companion.ConfigureServer(models.CompanionSetup{HTTPSURL: "https://127.0.0.1:8443"})
+	companion.ConfigureServer(models.CompanionSetup{HTTPSURL: "https://race-assistant.local:8443", FallbackHTTPSURL: "https://127.0.0.1:8443"})
 	return companion, NewTimingService(timingRepo, eventRepo), race, e5, e10
 }
 
@@ -322,6 +322,9 @@ func TestCompanionNumericPairingCodeIsEightDigitsAndSingleUse(t *testing.T) {
 	}
 	if len(pairing.Code) != 8 {
 		t.Fatalf("expected an eight-digit code, got %q", pairing.Code)
+	}
+	if !strings.HasPrefix(pairing.URL, "https://race-assistant.local:8443/companion/") || !strings.HasPrefix(pairing.FallbackURL, "https://127.0.0.1:8443/companion/") {
+		t.Fatalf("pairing URLs did not include stable and fallback origins: %+v", pairing)
 	}
 	for _, digit := range pairing.Code {
 		if digit < '0' || digit > '9' {
