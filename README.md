@@ -27,6 +27,9 @@
   <a href="LICENSE"><img alt="License: AGPL v3 or later" src="https://img.shields.io/badge/license-AGPL--3.0--or--later-663399"></a>
 </p>
 
+> [!NOTE]
+> **AI-assisted development:** Race Assistant has been developed with substantial assistance from OpenAI Codex, including code generation, review, refactoring, testing, and documentation. AI-generated output is not accepted blindly: the project is human-directed and maintained, changes are reviewed and tested, and the application has been exercised in real race-day scenarios at community events. As with any timing system, race crews should practice their complete workflow and maintain a backup plan before an event.
+
 ![Race Assistant dashboard showing a community race, event count, registration status, and the running reference clock](docs/images/dashboard.png)
 
 ## Timing should not be the hardest part of putting on a race
