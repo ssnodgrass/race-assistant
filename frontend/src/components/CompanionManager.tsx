@@ -54,7 +54,7 @@ export function CompanionManager({ race, events, onRaceRefresh }: Props) {
 
   const roleColor = (role: string) => role === 'timer' ? 'var(--success)' : role === 'bib' ? 'var(--accent)' : 'var(--warning)';
 
-  return <div style={{ display: 'flex', flexDirection: 'column', height: '100%', gap: 'var(--space-lg)' }}>
+  return <div style={{ display: 'flex', flexDirection: 'column', minHeight: '100%', flex: '0 0 auto', paddingBottom: 2, gap: 'var(--space-lg)' }}>
     <div className="flex-between">
       <div><h1 style={{ marginBottom: 4 }}>Phone Companion</h1><div className="text-dim">Secure phone timing and bib entry for {race.name}</div></div>
       {state?.session ? <button style={{ background: 'var(--danger)' }} onClick={stopSession}>Stop Session</button> : <div style={{ display: 'flex', alignItems: 'end', gap: 10 }}><label style={{ minWidth: 240 }}><span className="text-dim" style={{ display: 'block', marginBottom: 4 }}>RECORDING SCOPE</span><select value={selectedEventID} onChange={event => setSelectedEventID(Number(event.target.value))}><option value={0}>Common Chute — All Events</option>{events.map(event => <option key={event.id} value={event.id}>{event.name}</option>)}</select></label><button onClick={startSession}>Start Session</button></div>}
@@ -62,23 +62,31 @@ export function CompanionManager({ race, events, onRaceRefresh }: Props) {
 
     {error && <div className="card" style={{ borderColor: 'var(--danger)', color: 'var(--danger)', margin: 0 }}>{error}</div>}
     {setup?.server_error && <div className="card text-danger">HTTPS server error: {setup.server_error}</div>}
+    {setup?.discovery_error && <div className="card" style={{ borderColor: 'var(--warning)', color: 'var(--warning)', margin: 0 }}>Stable hostname unavailable: {setup.discovery_error}. Use the IP fallback below or check firewall and multicast settings.</div>}
 
     <div style={{ display: 'grid', gridTemplateColumns: 'minmax(320px, 1fr) minmax(320px, 1fr)', gap: 'var(--space-lg)' }}>
       <div className="card" style={{ margin: 0 }}>
         <h2>1. Trust this laptop</h2>
-        <p className="text-dim">Required once per phone. Scan, install the Race Assistant CA, and enable full trust. Verify the fingerprint shown below.</p>
+        <p className="text-dim">Required once per phone. The stable address remains the same when this laptop's IP changes. Scan, install the Race Assistant CA, and enable full trust.</p>
         {setup?.bootstrap_url && <div style={{ background: 'white', padding: 14, width: 'fit-content', margin: '18px auto' }}><QRCodeSVG value={setup.bootstrap_url} size={190} marginSize={2}/></div>}
+        <div style={{ textAlign: 'center', fontFamily: 'monospace', color: 'var(--success)', marginBottom: 12 }}>{setup?.stable_hostname}</div>
         <div style={{ fontFamily: 'monospace', wordBreak: 'break-all', fontSize: '.78rem', color: 'var(--text-dim)' }}>{setup?.ca_fingerprint}</div>
         <div style={{ marginTop: 12, textAlign: 'center' }}><a href={setup?.bootstrap_url} target="_blank" rel="noreferrer">Open setup instructions</a></div>
+        {setup?.fallback_bootstrap_url && <details style={{ marginTop: 16 }}><summary style={{ cursor: 'pointer', color: 'var(--warning)' }}>Stable address not opening? Show IP fallback</summary><div style={{ background: 'white', padding: 12, width: 'fit-content', margin: '14px auto' }}><QRCodeSVG value={setup.fallback_bootstrap_url} size={150} marginSize={2}/></div><p className="text-dim" style={{ textAlign: 'center' }}>Current IP: {setup.lan_ip}. An app installed from this fallback may need reinstalling if the IP changes.</p></details>}
       </div>
 
       <div className="card" style={{ margin: 0, opacity: state?.session ? 1 : .55 }}>
         <h2>2. Pair a phone</h2>
         {!state?.session ? <p>Start a session before pairing phones.</p> : <>
-          <button onClick={createPairing} style={{ width: '100%' }}>Generate one-time QR</button>
+          <button onClick={createPairing} style={{ width: '100%' }}>Generate pairing QR and code</button>
           {pairing && <>
             <div style={{ background: 'white', padding: 14, width: 'fit-content', margin: '18px auto' }}><QRCodeSVG value={pairing.url} size={220} level="M" marginSize={2}/></div>
-            <p className="text-dim" style={{ textAlign: 'center' }}>Single use · expires {new Date(pairing.expires_at_unix_ms).toLocaleTimeString()}</p>
+            <div style={{ textAlign: 'center' }}>
+              <div className="text-dim" style={{ fontSize: '.8rem', fontWeight: 700, letterSpacing: '.08em' }}>OR ENTER THIS ONE-TIME CODE</div>
+              <div style={{ font: '800 2.4rem monospace', letterSpacing: '.2em', margin: '8px 0' }}>{pairing.code}</div>
+              <p className="text-dim">QR and code are single use · expires {new Date(pairing.expires_at_unix_ms).toLocaleTimeString()}</p>
+            </div>
+            {pairing.fallback_url && <details style={{ marginTop: 12 }}><summary style={{ cursor: 'pointer', color: 'var(--warning)' }}>Show IP fallback pairing QR</summary><div style={{ background: 'white', padding: 12, width: 'fit-content', margin: '14px auto' }}><QRCodeSVG value={pairing.fallback_url} size={170} level="M" marginSize={2}/></div></details>}
           </>}
         </>}
       </div>

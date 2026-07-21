@@ -176,18 +176,23 @@ func main() {
 	}
 
 	frontendFS, _ := fs.Sub(assets, "frontend/dist")
-	companionHost := preferredLANIP()
-	companionPKI, companionPKIErr := ensureCompanionPKI(companionHost)
+	companionIP := preferredLANIP()
+	companionPKI, companionPKIErr := ensureCompanionPKI(companionStableHostname, companionIP)
 	if companionPKIErr != nil {
 		log.Printf("Companion PKI error: %v", companionPKIErr)
 		companionService.ConfigureServer(models.CompanionSetup{ServerError: companionPKIErr.Error()})
 	} else {
 		companionService.ConfigureServer(models.CompanionSetup{
-			HTTPSURL:      fmt.Sprintf("https://%s:8443", companionHost),
-			BootstrapURL:  fmt.Sprintf("http://%s:8080/companion-setup", companionHost),
-			CAFingerprint: companionPKI.caFingerprint,
+			HTTPSURL:             fmt.Sprintf("https://%s:8443", companionStableHostname),
+			BootstrapURL:         fmt.Sprintf("http://%s:8080/companion-setup", companionStableHostname),
+			FallbackHTTPSURL:     fmt.Sprintf("https://%s:8443", companionIP),
+			FallbackBootstrapURL: fmt.Sprintf("http://%s:8080/companion-setup", companionIP),
+			StableHostname:       companionStableHostname,
+			LANIP:                companionIP,
+			CAFingerprint:        companionPKI.caFingerprint,
 		})
 		startCompanionHTTPS(frontendFS, companionService, companionPKI)
+		startCompanionMDNS(companionService, companionStableHostname)
 	}
 
 	go func() {

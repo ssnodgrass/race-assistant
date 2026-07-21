@@ -477,7 +477,7 @@ export const ParticipantManagement: React.FC<ParticipantManagementProps> = ({ ra
                                 <tr key={re.event_id}>
                                     <td style={{fontSize: '0.9em', padding: '8px 0'}}>{re.name}</td>
                                     <td>
-                                        <select value={eventMappings[re.event_id] || ''} onChange={e => setEventMappings({...eventMappings, [re.event_id]: parseInt(e.target.value)})} style={{ padding: '4px 8px', fontSize: '0.9em' }}>
+                                        <select value={eventMappings[re.event_id] || ''} onChange={e => setEventMappings({...eventMappings, [re.event_id]: parseInt(e.target.value)})} style={{ padding: '6px 34px 6px 8px', fontSize: '0.9em' }}>
                                             <option value="">-- Skip --</option>
                                             {events.map(le => <option key={le.id} value={le.id}>{le.name}</option>)}
                                         </select>

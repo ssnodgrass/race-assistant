@@ -1,11 +1,45 @@
 package services
 
 import (
+	"strings"
 	"testing"
 	"time"
 
 	"github.com/ssnodgrass/race-assistant/models"
 )
+
+func TestAssignBibDoesNotImplicitlyMoveExistingPlacement(t *testing.T) {
+	raceRepo, eventRepo, partRepo, timingRepo := setupTestDB(t)
+	race := models.Race{Name: "Duplicate Placement Test", Date: time.Now()}
+	if err := raceRepo.Create(&race); err != nil {
+		t.Fatal(err)
+	}
+	event := models.Event{RaceID: race.ID, Name: "5K", DistanceKM: 5}
+	if err := eventRepo.Create(&event); err != nil {
+		t.Fatal(err)
+	}
+	participant := models.Participant{RaceID: race.ID, EventID: event.ID, BibNumber: "111", FirstName: "Duplicate", LastName: "Runner", Gender: "M", AgeOnRaceDay: 30}
+	if err := partRepo.Create(&participant); err != nil {
+		t.Fatal(err)
+	}
+	timing := NewTimingService(timingRepo, eventRepo)
+	if err := timing.AssignBibToPlaceForEvent(race.ID, event.ID, 1, "111"); err != nil {
+		t.Fatal(err)
+	}
+	if err := timing.AssignBibToPlaceForEvent(race.ID, event.ID, 7, "111"); err == nil || !strings.Contains(err.Error(), "already assigned to place 1") {
+		t.Fatalf("expected implicit move to be rejected, got %v", err)
+	}
+	if err := timing.AssignBibToPlaceForEvent(race.ID, event.ID, 7, "DUP:111"); err != nil {
+		t.Fatalf("duplicate marker should preserve the extra finish: %v", err)
+	}
+	placements, err := timing.ListPlacementsByEvent(race.ID, event.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(placements) != 2 || placements[0].Place != 1 || placements[0].BibNumber != "111" || placements[1].Place != 7 || placements[1].BibNumber != "DUP:111" {
+		t.Fatalf("duplicate assignment changed the original placement: %+v", placements)
+	}
+}
 
 func TestDeleteAllPlacementsByEvent(t *testing.T) {
 	raceRepo, eventRepo, partRepo, timingRepo := setupTestDB(t)

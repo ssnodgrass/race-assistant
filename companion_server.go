@@ -20,8 +20,11 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 	"time"
 
+	"github.com/hashicorp/mdns"
+	"github.com/libp2p/zeroconf/v2"
 	"github.com/ssnodgrass/race-assistant/models"
 	"github.com/ssnodgrass/race-assistant/services"
 )
@@ -32,6 +35,55 @@ type companionPKI struct {
 	certFile      string
 	keyFile       string
 	host          string
+	fallbackHost  string
+}
+
+const companionStableHostname = "race-assistant.local"
+
+type pairingAttemptWindow struct {
+	started  time.Time
+	attempts int
+}
+
+type pairingAttemptLimiter struct {
+	mu       sync.Mutex
+	windows  map[string]pairingAttemptWindow
+	limit    int
+	duration time.Duration
+}
+
+func newPairingAttemptLimiter(limit int, duration time.Duration) *pairingAttemptLimiter {
+	return &pairingAttemptLimiter{windows: make(map[string]pairingAttemptWindow), limit: limit, duration: duration}
+}
+
+func (l *pairingAttemptLimiter) allow(key string, now time.Time) bool {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	window, exists := l.windows[key]
+	if !exists || now.Sub(window.started) >= l.duration {
+		l.windows[key] = pairingAttemptWindow{started: now, attempts: 1}
+		return true
+	}
+	if window.attempts >= l.limit {
+		return false
+	}
+	window.attempts++
+	l.windows[key] = window
+	return true
+}
+
+func (l *pairingAttemptLimiter) clear(key string) {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	delete(l.windows, key)
+}
+
+func companionClientKey(r *http.Request) string {
+	host, _, err := net.SplitHostPort(r.RemoteAddr)
+	if err == nil {
+		return host
+	}
+	return r.RemoteAddr
 }
 
 func preferredLANIP() string {
@@ -81,7 +133,33 @@ func preferredLANIP() string {
 	return "127.0.0.1"
 }
 
-func ensureCompanionPKI(host string) (companionPKI, error) {
+func interfaceForIP(ipString string) *net.Interface {
+	target := net.ParseIP(ipString)
+	if target == nil {
+		return nil
+	}
+	interfaces, _ := net.Interfaces()
+	for index := range interfaces {
+		addrs, _ := interfaces[index].Addrs()
+		for _, addr := range addrs {
+			ip, _, err := net.ParseCIDR(addr.String())
+			if err == nil && ip.Equal(target) {
+				return &interfaces[index]
+			}
+		}
+	}
+	return nil
+}
+
+func companionLeafCertificate(host, fallbackHost string, now time.Time, serial *big.Int) *x509.Certificate {
+	leaf := &x509.Certificate{SerialNumber: serial, Subject: pkix.Name{CommonName: "Race Assistant Companion"}, NotBefore: now.Add(-time.Hour), NotAfter: now.Add(30 * 24 * time.Hour), KeyUsage: x509.KeyUsageDigitalSignature | x509.KeyUsageKeyEncipherment, ExtKeyUsage: []x509.ExtKeyUsage{x509.ExtKeyUsageServerAuth}, DNSNames: []string{strings.TrimSuffix(host, ".")}}
+	if fallbackIP := net.ParseIP(fallbackHost); fallbackIP != nil {
+		leaf.IPAddresses = []net.IP{fallbackIP}
+	}
+	return leaf
+}
+
+func ensureCompanionPKI(host, fallbackHost string) (companionPKI, error) {
 	configDir, err := os.UserConfigDir()
 	if err != nil {
 		return companionPKI{}, err
@@ -135,7 +213,7 @@ func ensureCompanionPKI(host string) (companionPKI, error) {
 		return companionPKI{}, err
 	}
 	serial, _ := rand.Int(rand.Reader, new(big.Int).Lsh(big.NewInt(1), 128))
-	leaf := &x509.Certificate{SerialNumber: serial, Subject: pkix.Name{CommonName: "Race Assistant Companion"}, NotBefore: now.Add(-time.Hour), NotAfter: now.Add(30 * 24 * time.Hour), KeyUsage: x509.KeyUsageDigitalSignature | x509.KeyUsageKeyEncipherment, ExtKeyUsage: []x509.ExtKeyUsage{x509.ExtKeyUsageServerAuth}, IPAddresses: []net.IP{net.ParseIP(host)}}
+	leaf := companionLeafCertificate(host, fallbackHost, now, serial)
 	leafDER, err := x509.CreateCertificate(rand.Reader, leaf, caCert, &leafKey.PublicKey, caKey)
 	if err != nil {
 		return companionPKI{}, err
@@ -150,7 +228,75 @@ func ensureCompanionPKI(host string) (companionPKI, error) {
 		return companionPKI{}, err
 	}
 	sum := sha256Bytes(caDER)
-	return companionPKI{caDER: caDER, caFingerprint: strings.ToUpper(strings.Join(splitEvery(hexString(sum), 2), ":")), certFile: certFile, keyFile: keyFile, host: host}, nil
+	return companionPKI{caDER: caDER, caFingerprint: strings.ToUpper(strings.Join(splitEvery(hexString(sum), 2), ":")), certFile: certFile, keyFile: keyFile, host: host, fallbackHost: fallbackHost}, nil
+}
+
+func setCompanionDiscoveryError(service *services.CompanionService, err error) {
+	setup := service.GetSetup()
+	if err == nil {
+		setup.DiscoveryError = ""
+	} else {
+		setup.DiscoveryError = err.Error()
+	}
+	service.ConfigureServer(setup)
+}
+
+func startCompanionMDNS(service *services.CompanionService, hostname string) {
+	go func() {
+		var responder *mdns.Server
+		var announcer *zeroconf.Server
+		currentIP := ""
+		ticker := time.NewTicker(3 * time.Second)
+		defer ticker.Stop()
+		for {
+			ipString := preferredLANIP()
+			if ipString != currentIP || responder == nil || announcer == nil {
+				if responder != nil {
+					_ = responder.Shutdown()
+					responder = nil
+				}
+				if announcer != nil {
+					announcer.Shutdown()
+					announcer = nil
+				}
+				if ipString == "127.0.0.1" {
+					setCompanionDiscoveryError(service, fmt.Errorf("no private LAN or hotspot address is available for %s", hostname))
+				} else {
+					iface := interfaceForIP(ipString)
+					var err error
+					if iface == nil {
+						err = fmt.Errorf("could not find the network interface for %s", ipString)
+					} else {
+						var zone *mdns.MDNSService
+						zone, err = mdns.NewMDNSService("Race Assistant Companion", "_https._tcp", "local.", strings.TrimSuffix(hostname, ".")+".", 8443, []net.IP{net.ParseIP(ipString)}, []string{"path=/companion/"})
+						if err == nil {
+							responder, err = mdns.NewServer(&mdns.Config{Zone: zone, Iface: iface})
+						}
+						if err == nil {
+							announcer, err = zeroconf.RegisterProxy("Race Assistant Companion", "_https._tcp", "local.", 8443, strings.TrimSuffix(hostname, ".")+".", []string{ipString}, []string{"path=/companion/"}, []net.Interface{*iface}, zeroconf.TTL(120))
+						}
+					}
+					if err != nil {
+						if responder != nil {
+							_ = responder.Shutdown()
+							responder = nil
+						}
+						if announcer != nil {
+							announcer.Shutdown()
+							announcer = nil
+						}
+						setCompanionDiscoveryError(service, fmt.Errorf("could not advertise %s on %s: %w", hostname, ipString, err))
+						log.Printf("Companion mDNS error: %v", err)
+					} else {
+						setCompanionDiscoveryError(service, nil)
+						currentIP = ipString
+						log.Printf("Companion mDNS advertised https://%s:8443 on %s", hostname, ipString)
+					}
+				}
+			}
+			<-ticker.C
+		}
+	}()
 }
 
 func sha256Bytes(data []byte) []byte { h := sha256Sum(data); return h[:] }
@@ -180,7 +326,7 @@ func (p companionPKI) registerBootstrap(mux *http.ServeMux) {
 	mux.HandleFunc("/companion-setup", func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Cache-Control", "no-store")
 		w.Header().Set("Content-Type", "text/html; charset=utf-8")
-		fmt.Fprintf(w, `<!doctype html><meta name="viewport" content="width=device-width"><title>Trust Race Assistant</title><style>body{font:18px system-ui;max-width:680px;margin:40px auto;padding:20px}a{display:block;padding:18px;background:#076fe5;color:white;margin:18px 0;text-align:center;border-radius:8px}code{word-break:break-all}</style><h1>Trust this Race Assistant laptop</h1><p>Verify this fingerprint on the laptop:</p><code>%s</code><a href="/companion-ca.crt">Android / certificate download</a><a href="/race-assistant.mobileconfig">iPhone / iPad profile</a><p><strong>iPhone/iPad:</strong> installing the profile is only the first step. You must also open Settings → General → About → Certificate Trust Settings and enable full trust for Race Assistant Local CA.</p><a href="https://%s:8443/companion/">Test HTTPS trust and open Companion</a><p>This laptop intentionally reuses the same local CA. Downloading it again will not change the fingerprint; if the trust test fails, remove an older Race Assistant profile, reinstall this one, and enable full trust again.</p>`, p.caFingerprint, p.host)
+		fmt.Fprintf(w, `<!doctype html><meta name="viewport" content="width=device-width"><title>Trust Race Assistant</title><style>body{font:18px system-ui;max-width:680px;margin:40px auto;padding:20px}a{display:block;padding:18px;background:#076fe5;color:white;margin:18px 0;text-align:center;border-radius:8px}.fallback{background:#596273}code{word-break:break-all}</style><h1>Trust this Race Assistant laptop</h1><p>Verify this fingerprint on the laptop:</p><code>%s</code><a href="/companion-ca.crt">Android / certificate download</a><a href="/race-assistant.mobileconfig">iPhone / iPad profile</a><p><strong>iPhone/iPad:</strong> installing the profile is only the first step. You must also open Settings → General → About → Certificate Trust Settings and enable full trust for Race Assistant Local CA.</p><a href="https://%s:8443/companion/">Open Companion at stable address</a><p>The <code>.local</code> address keeps the installed app working when the laptop's IP changes. It requires both devices on the same LAN or hotspot with multicast discovery enabled.</p><a class="fallback" href="https://%s:8443/companion/">IP fallback for this network</a><p>This laptop intentionally reuses the same local CA. Downloading it again will not change the fingerprint; if the trust test fails, remove an older Race Assistant profile, reinstall this one, and enable full trust again.</p>`, p.caFingerprint, p.host, p.fallbackHost)
 	})
 	mux.HandleFunc("/companion-ca.crt", func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Cache-Control", "no-store")
@@ -201,6 +347,7 @@ func (p companionPKI) registerBootstrap(mux *http.ServeMux) {
 func startCompanionHTTPS(frontendFS fs.FS, service *services.CompanionService, pki companionPKI) {
 	mux := http.NewServeMux()
 	files := http.FileServer(http.FS(frontendFS))
+	pairLimiter := newPairingAttemptLimiter(10, time.Minute)
 	mux.HandleFunc("/companion/", func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path != "/companion/" {
 			files.ServeHTTP(w, r)
@@ -217,10 +364,20 @@ func startCompanionHTTPS(frontendFS fs.FS, service *services.CompanionService, p
 	})
 	mux.Handle("/assets/", files)
 	mux.Handle("/companion.webmanifest", files)
-	mux.Handle("/companion-sw.js", files)
+	mux.HandleFunc("/companion-sw.js", func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Cache-Control", "no-cache")
+		w.Header().Set("Service-Worker-Allowed", "/companion/")
+		files.ServeHTTP(w, r)
+	})
 	mux.HandleFunc("/api/companion/pair", func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != "POST" {
 			http.Error(w, "method not allowed", 405)
+			return
+		}
+		clientKey := companionClientKey(r)
+		if !pairLimiter.allow(clientKey, time.Now()) {
+			w.Header().Set("Retry-After", "60")
+			http.Error(w, "too many pairing attempts; wait one minute", http.StatusTooManyRequests)
 			return
 		}
 		var req struct {
@@ -236,8 +393,22 @@ func startCompanionHTTPS(frontendFS fs.FS, service *services.CompanionService, p
 			writeCompanionError(w, err, http.StatusUnauthorized)
 			return
 		}
+		pairLimiter.clear(clientKey)
 		http.SetCookie(w, &http.Cookie{Name: "race_companion", Value: token, Path: "/", Secure: true, HttpOnly: true, SameSite: http.SameSiteStrictMode, MaxAge: 86400})
 		writeJSON(w, state)
+	})
+	mux.HandleFunc("/api/companion/unpair", func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodPost {
+			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+			return
+		}
+		err := service.Unpair(companionCookie(r))
+		if err != nil && !errors.Is(err, services.ErrCompanionUnauthorized) {
+			writeCompanionError(w, err, http.StatusInternalServerError)
+			return
+		}
+		http.SetCookie(w, &http.Cookie{Name: "race_companion", Value: "", Path: "/", Secure: true, HttpOnly: true, SameSite: http.SameSiteStrictMode, MaxAge: -1, Expires: time.Unix(1, 0)})
+		w.WriteHeader(http.StatusNoContent)
 	})
 	mux.HandleFunc("/api/companion/state", func(w http.ResponseWriter, r *http.Request) {
 		token := companionCookie(r)

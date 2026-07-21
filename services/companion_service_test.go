@@ -36,7 +36,7 @@ func setupCompanionTest(t *testing.T) (*CompanionService, *TimingService, models
 	}
 	companion := NewCompanionService()
 	companion.SetDB(raceRepo.GetDB())
-	companion.ConfigureServer(models.CompanionSetup{HTTPSURL: "https://127.0.0.1:8443"})
+	companion.ConfigureServer(models.CompanionSetup{HTTPSURL: "https://race-assistant.local:8443", FallbackHTTPSURL: "https://127.0.0.1:8443"})
 	return companion, NewTimingService(timingRepo, eventRepo), race, e5, e10
 }
 
@@ -150,12 +150,60 @@ func TestCompanionSessionRecordsIntoSelectedEvent(t *testing.T) {
 	}
 }
 
+func TestCompanionBibCapturesApproximateChuteTime(t *testing.T) {
+	service, _, race, event, _ := setupCompanionTest(t)
+	session, err := service.StartSession(race.ID, event.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	bibber := pairCompanion(t, service, session.ID, "Bib")
+	if err = service.AcquireRole(bibber, "bib"); err != nil {
+		t.Fatal(err)
+	}
+	start := time.Now().Add(-2 * time.Minute).Truncate(time.Millisecond)
+	if _, err = service.db.Exec("UPDATE races SET start_time=? WHERE id=?", start, race.ID); err != nil {
+		t.Fatal(err)
+	}
+	captured := start.Add(time.Minute + 2345*time.Millisecond)
+	acks, err := service.Submit(bibber, []models.CompanionEntry{companionEntry("timed-bib", "bib", "101", captured.UnixMilli())})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if acks[0].Elapsed != "00:01:02.345" {
+		t.Fatalf("unexpected acknowledgement elapsed time: %+v", acks[0])
+	}
+	var unofficial string
+	if err = service.db.QueryRow("SELECT unofficial_time FROM chute_assignments WHERE race_id=? AND event_id=? AND place=1", race.ID, event.ID).Scan(&unofficial); err != nil {
+		t.Fatal(err)
+	}
+	if unofficial != "00:01:02.345" {
+		t.Fatalf("expected approximate chute time, got %q", unofficial)
+	}
+
+	// Existing companion rows from versions that stored a blank time are repaired
+	// when their database is opened.
+	if _, err = service.db.Exec("UPDATE chute_assignments SET unofficial_time='' WHERE race_id=? AND event_id=? AND place=1", race.ID, event.ID); err != nil {
+		t.Fatal(err)
+	}
+	if err = backfillCompanionChuteTimes(service.db); err != nil {
+		t.Fatal(err)
+	}
+	if err = service.db.QueryRow("SELECT unofficial_time FROM chute_assignments WHERE race_id=? AND event_id=? AND place=1", race.ID, event.ID).Scan(&unofficial); err != nil {
+		t.Fatal(err)
+	}
+	if unofficial != "00:01:02.345" {
+		t.Fatalf("expected legacy chute time to be repaired, got %q", unofficial)
+	}
+}
+
 func TestCompanionOfflineStartDerivesEarlierFinishCapture(t *testing.T) {
 	service, _, race, _, _ := setupCompanionTest(t)
 	session, _ := service.StartSession(race.ID, 0)
 	timer := pairCompanion(t, service, session.ID, "Timer")
+	bibber := pairCompanion(t, service, session.ID, "Bib")
 	starter := pairCompanion(t, service, session.ID, "Starter")
 	_ = service.AcquireRole(timer, "timer")
+	_ = service.AcquireRole(bibber, "bib")
 	_ = service.AcquireRole(starter, "start")
 	start := time.Now().Add(-20 * time.Minute).Truncate(time.Millisecond)
 	finish := start.Add(18*time.Minute + 123*time.Millisecond)
@@ -166,6 +214,17 @@ func TestCompanionOfflineStartDerivesEarlierFinishCapture(t *testing.T) {
 	_ = service.db.QueryRow("SELECT raw_time FROM timing_pulses WHERE race_id=?", race.ID).Scan(&raw)
 	if raw != "" {
 		t.Fatalf("expected pending raw time, got %q", raw)
+	}
+	bibCapture := start.Add(19*time.Minute + 456*time.Millisecond)
+	if _, err := service.Submit(bibber, []models.CompanionEntry{companionEntry("bib-before-start", "bib", "101", bibCapture.UnixMilli())}); err != nil {
+		t.Fatal(err)
+	}
+	var unofficial string
+	if err := service.db.QueryRow("SELECT unofficial_time FROM chute_assignments WHERE race_id=?", race.ID).Scan(&unofficial); err != nil {
+		t.Fatal(err)
+	}
+	if unofficial != "" {
+		t.Fatalf("expected pending unofficial time, got %q", unofficial)
 	}
 	if _, err := service.Submit(starter, []models.CompanionEntry{companionEntry("remote-start", "start", "", start.UnixMilli())}); err != nil {
 		t.Fatal(err)
@@ -180,6 +239,12 @@ func TestCompanionOfflineStartDerivesEarlierFinishCapture(t *testing.T) {
 	_ = service.db.QueryRow("SELECT raw_time FROM timing_pulses WHERE race_id=?", race.ID).Scan(&raw)
 	if raw != "00:18:00.123" {
 		t.Fatalf("expected derived time, got %q", raw)
+	}
+	if err := service.db.QueryRow("SELECT unofficial_time FROM chute_assignments WHERE race_id=?", race.ID).Scan(&unofficial); err != nil {
+		t.Fatal(err)
+	}
+	if unofficial != "00:19:00.456" {
+		t.Fatalf("expected derived approximate chute time, got %q", unofficial)
 	}
 }
 
@@ -307,5 +372,66 @@ func TestCompanionPairingCannotOutliveItsSession(t *testing.T) {
 	}
 	if _, _, err = service.Pair(pairing.Token, "Late phone"); err == nil {
 		t.Fatal("pairing succeeded after its session was stopped")
+	}
+}
+
+func TestCompanionNumericPairingCodeIsEightDigitsAndSingleUse(t *testing.T) {
+	service, _, race, _, _ := setupCompanionTest(t)
+	session, err := service.StartSession(race.ID, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	pairing, err := service.CreatePairing(session.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(pairing.Code) != 8 {
+		t.Fatalf("expected an eight-digit code, got %q", pairing.Code)
+	}
+	if !strings.HasPrefix(pairing.URL, "https://race-assistant.local:8443/companion/") || !strings.HasPrefix(pairing.FallbackURL, "https://127.0.0.1:8443/companion/") {
+		t.Fatalf("pairing URLs did not include stable and fallback origins: %+v", pairing)
+	}
+	for _, digit := range pairing.Code {
+		if digit < '0' || digit > '9' {
+			t.Fatalf("pairing code is not numeric: %q", pairing.Code)
+		}
+	}
+	if _, state, err := service.Pair(pairing.Code, "Code phone"); err != nil || state.Session == nil || state.Session.ID != session.ID {
+		t.Fatalf("numeric pairing failed: state=%+v err=%v", state, err)
+	}
+	if _, _, err := service.Pair(pairing.Token, "QR reuse"); err == nil {
+		t.Fatal("QR token remained usable after its matching numeric code was consumed")
+	}
+	pairing, err = service.CreatePairing(session.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, _, err = service.Pair(pairing.Token, "QR phone"); err != nil {
+		t.Fatalf("QR pairing failed: %v", err)
+	}
+	if _, _, err = service.Pair(pairing.Code, "Code reuse"); err == nil {
+		t.Fatal("numeric code remained usable after its matching QR token was consumed")
+	}
+}
+
+func TestCompanionUnpairRevokesDeviceAndReleasesRole(t *testing.T) {
+	service, _, race, _, _ := setupCompanionTest(t)
+	session, err := service.StartSession(race.ID, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	first := pairCompanion(t, service, session.ID, "First phone")
+	second := pairCompanion(t, service, session.ID, "Second phone")
+	if err := service.AcquireRole(first, "timer"); err != nil {
+		t.Fatal(err)
+	}
+	if err := service.Unpair(first); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := service.Authenticate(first); err != ErrCompanionUnauthorized {
+		t.Fatalf("unpaired token remained authorized: %v", err)
+	}
+	if err := service.AcquireRole(second, "timer"); err != nil {
+		t.Fatalf("unpair did not release role: %v", err)
 	}
 }

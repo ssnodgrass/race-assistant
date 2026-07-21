@@ -164,8 +164,7 @@ function App() {
                 </div>
                 <div className="flex-row">
                     <button onClick={() => setView('live_display')} style={{ backgroundColor: view === 'live_display' ? 'var(--accent)' : '#222', padding: '10px 20px', fontSize: '1.1rem' }}>Live Board</button>
-                    <button onClick={() => setView('awards')} style={{ backgroundColor: view === 'awards' ? 'var(--accent)' : '#222', padding: '10px 20px', fontSize: '1.1rem' }}>Awards</button>
-                    <button onClick={() => setView('reporting')} style={{ backgroundColor: view === 'reporting' ? 'var(--accent)' : '#222', padding: '10px 20px', fontSize: '1.1rem' }}>Standings</button>
+                    <button onClick={() => setView('awards')} style={{ backgroundColor: view === 'awards' || view === 'reporting' ? 'var(--accent)' : '#222', padding: '10px 20px', fontSize: '1.1rem' }}>Awards / Results</button>
                 </div>
             </div>
 
@@ -173,8 +172,7 @@ function App() {
                 {selectedRace ? (
                     <div className="view-container" style={{ height: '100%' }}>
                         {view === 'live_display' && <LiveResults events={events} selectedRace={selectedRace} onRefresh={refreshActiveRace} isBrowser={isBrowserMode} />}
-                        {view === 'awards' && <AwardsView events={events} mode="awards" isExternal={true} isBrowser={isBrowserMode} />}
-                        {view === 'reporting' && <AwardsView events={events} mode="standings" isExternal={true} isBrowser={isBrowserMode} />}
+                        {(view === 'awards' || view === 'reporting') && <AwardsView events={events} mode={view === 'reporting' ? 'standings' : 'awards'} isExternal={true} isBrowser={isBrowserMode} />}
                         {view !== 'live_display' && view !== 'awards' && view !== 'reporting' && <LiveResults events={events} selectedRace={selectedRace} onRefresh={refreshActiveRace} isBrowser={isBrowserMode} />}
                     </div>
                 ) : (
@@ -211,10 +209,9 @@ function App() {
                             <div className="sidebar-divider">Entry & Results</div>
                             <NavItem label="Placements" target="placements" icon="🥇" />
                             <NavItem label="Stopwatch Import" target="stopwatch" icon="⏱️" />
-                            <NavItem label="Manual Times" target="times" icon="🖊️" />
+                            <NavItem label="Finish Times" target="times" icon="🖊️" />
                             <NavItem label="Phone Companion" target="companion" icon="📱" />
-                            <NavItem label="Process Awards" target="awards" icon="🏆" />
-                            <NavItem label="Full Reporting" target="reporting" icon="📄" />
+                            <NavItem label="Awards / Results" target="awards" icon="🏆" />
                             <NavItem label="Live Display" target="live_display" icon="📺" />
                             <div className="sidebar-divider">External</div>
                             <div className="nav-item" onClick={() => DatabaseService.OpenExternalWindow('live_display', selectedRace.id)} style={{ color: 'var(--success)' }}>
@@ -255,7 +252,7 @@ function App() {
                 <CreateRace onCreated={(r) => { setSelectedRace(r); setView('race_detail'); loadRaces(); }} onCancel={() => setView('list')} />
                 )}
                 {selectedRace && (
-                <div style={{ flexGrow: 1, display: 'flex', flexDirection: 'column', minHeight: 0 }}>
+                <div style={{ flexGrow: 1, display: 'flex', flexDirection: 'column', minHeight: 0, overflowY: view === 'companion' ? 'auto' : undefined, overscrollBehavior: view === 'companion' ? 'contain' : undefined }}>
                     {view === 'race_detail' && <RaceDashboard race={selectedRace} events={events} participants={participants} onRefresh={refreshActiveRace} />}
                     {view === 'manage_events' && <EventManagement raceID={selectedRace.id} events={events} onRefresh={() => loadRaceDetails(selectedRace.id)} />}
                     {view === 'award_config' && <AwardConfigView events={events} />}
@@ -263,8 +260,7 @@ function App() {
                     {view === 'placements' && <PlacementEntry race={selectedRace} participants={participants} events={events} onRefresh={refreshActiveRace} />}
                     {view === 'times' && <TimeEntry raceID={selectedRace.id} events={events} />}
                     {view === 'companion' && <CompanionManager race={selectedRace} events={events} onRaceRefresh={refreshActiveRace} />}
-                    {view === 'awards' && <AwardsView events={events} mode="awards" />}
-                    {view === 'reporting' && <AwardsView events={events} mode="standings" />}
+                    {(view === 'awards' || view === 'reporting') && <AwardsView events={events} mode={view === 'reporting' ? 'standings' : 'awards'} />}
                     {view === 'stopwatch' && <StopwatchImport raceID={selectedRace.id} events={events} onComplete={() => setView('race_detail')} />}
                     {view === 'live_display' && <LiveResults events={events} selectedRace={selectedRace} onRefresh={refreshActiveRace} isBrowser={isBrowserMode} />}
                     {view === 'import_csv' && (

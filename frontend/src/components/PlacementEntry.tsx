@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { TimingService } from '../../bindings/github.com/ssnodgrass/race-assistant/services';
 import { Participant, Event as RaceEvent, ChuteAssignment, Race } from '../../bindings/github.com/ssnodgrass/race-assistant/models';
+import { formatStoredElapsedHundredths } from '../utils/companionClock';
 
 interface PlacementEntryProps {
   race: Race;
@@ -32,6 +33,7 @@ export const PlacementEntry: React.FC<PlacementEntryProps> = ({ race, participan
   const [scannerMode, setScannerMode] = useState(false);
   const [lastScanned, setLastScanned] = useState<{place: number, bib: string, name: string} | null>(null);
   const [duplicateScan, setDuplicateScan] = useState<DuplicateScan | null>(null);
+  const [assignmentError, setAssignmentError] = useState('');
   const [nextPlaceholder, setNextPlaceholder] = useState(1);
   const [elapsed, setElapsed] = useState('00:00:00');
   
@@ -158,21 +160,43 @@ export const PlacementEntry: React.FC<PlacementEntryProps> = ({ race, participan
 
   const handleAssign = async (p: number, b: string, skipConfirm = false) => {
     if (!b || !p) return;
+    setAssignmentError('');
     const normalizedBib = normalizeScannedValue(b);
     const existingBibPlacement = placements.find(pl => pl.bib_number === normalizedBib && pl.place !== p);
-    if (scannerMode && normalizedBib !== "?" && existingBibPlacement) {
+    let existingBibPlace = existingBibPlacement?.place || 0;
+    if (normalizedBib !== "?" && !existingBibPlace) {
+      try {
+        const persistedPlace = await TimingService.GetBibAssignment(race.id, normalizedBib);
+        const alreadyAtTarget = placements.some(pl => pl.place === p && pl.bib_number === normalizedBib);
+        if (!alreadyAtTarget) existingBibPlace = persistedPlace;
+      } catch (e) {
+        setAssignmentError(String(e));
+        return;
+      }
+    }
+    if (normalizedBib !== "?" && existingBibPlace) {
       const marker = duplicateMarkerFor(normalizedBib);
+      const existingTarget = placements.find(pl => pl.place === p);
+      if (!skipConfirm && existingTarget && existingTarget.bib_number !== marker) {
+        const confirmed = window.confirm(
+          `Replace placement ${p} with a duplicate finish?\n\nCurrent: ${existingTarget.bib_number} - ${getParticipantName(existingTarget.bib_number)}\nDuplicate: ${normalizedBib} - already at place ${existingBibPlace}`
+        );
+        if (!confirmed) {
+          bibInputRef.current?.focus();
+          return;
+        }
+      }
       const unofficialTime = race.start_time ? elapsed : "";
       try {
         await TimingService.AssignBibToPlaceWithTimeForEvent(race.id, selectedEventID, p, marker, unofficialTime);
-        setDuplicateScan({ bib: normalizedBib, originalPlace: existingBibPlacement.place, duplicatePlace: p });
-        setLastScanned({ place: p, bib: normalizedBib, name: `DUPLICATE - already at place ${existingBibPlacement.place}` });
+        setDuplicateScan({ bib: normalizedBib, originalPlace: existingBibPlace, duplicatePlace: p });
+        setLastScanned({ place: p, bib: normalizedBib, name: `DUPLICATE - already at place ${existingBibPlace}` });
         targetDirtyRef.current = false;
         loadPlacements();
         setBib('');
         bibInputRef.current?.focus();
       } catch (e) {
-        console.error(e);
+        setAssignmentError(String(e));
       }
       return;
     }
@@ -202,7 +226,7 @@ export const PlacementEntry: React.FC<PlacementEntryProps> = ({ race, participan
         setBib('');
         bibInputRef.current?.focus();
       })
-      .catch(console.error);
+      .catch(e => setAssignmentError(String(e)));
   };
 
   const handleShift = (p: number, delta: number) => {
@@ -302,6 +326,12 @@ export const PlacementEntry: React.FC<PlacementEntryProps> = ({ race, participan
                         <button type="button" onClick={() => handleAssign(parseInt(place), placeholderMarkerFor(nextPlaceholder), true)} style={{ backgroundColor: '#a63' }}>Placeholder #{nextPlaceholder}</button>
                         <button type="button" onClick={() => handleAssign(parseInt(place), genericMarkerFor(), true)} style={{ backgroundColor: '#596273' }}>Excluded Finish</button>
                     </form>
+                    {duplicateScan && (
+                        <div style={{ marginTop: 'var(--space-md)', border: '2px solid var(--danger)', backgroundColor: 'rgba(244, 67, 54, 0.12)', color: 'var(--danger)', padding: '10px 14px', fontWeight: 800 }}>
+                            DUPLICATE BIB {duplicateScan.bib}: original place #{duplicateScan.originalPlace} was preserved; duplicate finish recorded at #{duplicateScan.duplicatePlace}.
+                        </div>
+                    )}
+                    {assignmentError && <div style={{ marginTop: 'var(--space-md)', color: 'var(--danger)', fontWeight: 700 }}>{assignmentError}</div>}
                 </div>
             )}
 
@@ -314,6 +344,7 @@ export const PlacementEntry: React.FC<PlacementEntryProps> = ({ race, participan
                             DUPLICATE BIB {duplicateScan.bib}: original place #{duplicateScan.originalPlace}, duplicate scan at #{duplicateScan.duplicatePlace}
                         </div>
                     )}
+                    {assignmentError && <div style={{ margin: '12px auto 0', maxWidth: '720px', color: 'var(--danger)', fontWeight: 700 }}>{assignmentError}</div>}
                     {lastScanned && (
                         <div style={{ marginTop: '20px' }}>
                             <div style={{ fontSize: '3.5rem', fontWeight: 900 }}>#{lastScanned.place}: {lastScanned.bib}</div>
@@ -382,7 +413,7 @@ export const PlacementEntry: React.FC<PlacementEntryProps> = ({ race, participan
                                         {isGenericRow && <span className="badge" style={{ marginLeft: '8px', backgroundColor: '#596273', color: 'white' }}>NO RESULT</span>}
                                     </td>
                                     <td>{getParticipantName(p.bib_number)}</td>
-                                    <td style={{ fontFamily: 'monospace', color: 'var(--text-dim)' }}>{p.unofficial_time || '--'}</td>
+                                    <td style={{ fontFamily: 'monospace', color: 'var(--text-dim)' }}>{p.unofficial_time ? formatStoredElapsedHundredths(p.unofficial_time) : '--'}</td>
                                     <td style={{ textAlign: 'right', paddingRight: 'var(--space-lg)' }}>
                                         <div className="flex-row" style={{ justifyContent: 'flex-end', gap: '4px' }}>
                                             <button onClick={(e) => { e.stopPropagation(); handleShift(p.place, 1); }} style={{ backgroundColor: '#333', padding: '4px 10px' }}>↓</button>

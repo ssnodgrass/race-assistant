@@ -137,7 +137,10 @@ export const TimeEntry: React.FC<TimeEntryProps> = ({ raceID, events }) => {
   return (
     <div style={{ display: 'flex', flexDirection: 'column', height: '100%' }}>
       <div className="flex-between" style={{ marginBottom: 'var(--space-lg)' }}>
-        <h2>Manual Finish-Time Entry</h2>
+        <div>
+          <h2 style={{ marginBottom: '4px' }}>Finish Times</h2>
+          <div className="text-dim">Review all finish captures or add and edit a time manually.</div>
+        </div>
         <div className="flex-row">
           <div style={{ minWidth: '220px' }}>
             <label style={{ display: 'block', marginBottom: '4px', fontWeight: 600, fontSize: '0.75em', color: 'var(--text-dim)' }}>EVENT</label>
@@ -216,7 +219,7 @@ export const TimeEntry: React.FC<TimeEntryProps> = ({ raceID, events }) => {
                         <tr>
                             <td colSpan={3} style={{ textAlign: 'center', padding: '60px', color: 'var(--text-dim)' }}>
                                 <div style={{ fontSize: '2rem', marginBottom: '10px' }}>⏱️</div>
-                                No manual times recorded yet.
+                                No finish times recorded yet.
                             </td>
                         </tr>
                     )}

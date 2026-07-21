@@ -6,10 +6,11 @@
     <link rel="manifest" href="/companion.webmanifest" />
     <link rel="icon" type="image/svg+xml" href="/wails.png" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <style>.boot-status{box-sizing:border-box;min-height:100vh;display:grid;place-content:center;padding:24px;background:#080b10;color:#f5f7fb;text-align:center;font:18px system-ui}.boot-status small{display:block;margin-top:8px;color:#aab4c2}</style>
     <title>Race Assistant</title>
   </head>
   <body>
-    <div id="root"></div>
+    <div id="root"><div class="boot-status"><strong>Opening Race Assistant…</strong><small>If this remains visible, reconnect to the laptop network and reopen the app.</small></div></div>
     <script type="module" src="/src/main.tsx"></script>
   </body>
 </html>

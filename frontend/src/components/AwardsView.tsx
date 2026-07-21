@@ -3,6 +3,9 @@ import { AwardService, TimingService, ReportingService } from '../../bindings/gi
 import { DatabaseService } from '../../bindings/github.com/ssnodgrass/race-assistant';
 import { Event as RaceEvent, Result } from '../../bindings/github.com/ssnodgrass/race-assistant/models';
 import { AwardCategory } from '../../bindings/github.com/ssnodgrass/race-assistant/services/models';
+import { getRunnerAwardStanding } from '../utils/awardLookup';
+import { formatStoredElapsedHundredths } from '../utils/companionClock';
+import './AwardsView.css';
 
 interface AwardsViewProps {
   events: RaceEvent[];
@@ -92,70 +95,113 @@ export const AwardsView: React.FC<AwardsViewProps> = ({ events, mode = 'awards',
 
   const renderTime = (r: Result) => {
     if (r.time) return r.time;
-    if (r.unofficial_time) return `~${r.unofficial_time}`;
+    if (r.unofficial_time) return `~${formatStoredElapsedHundredths(r.unofficial_time)}`;
     return '--:--.--';
   };
 
   const normalizedSearch = resultSearch.trim().toLowerCase();
-  const visibleResults = normalizedSearch
+  const matchingResults = normalizedSearch
     ? fullResults.filter(r =>
         `${r.first_name} ${r.last_name}`.toLowerCase().includes(normalizedSearch) ||
         r.bib_number.toLowerCase().includes(normalizedSearch)
       )
     : fullResults;
 
+  const standingFor = (runner: Result) => getRunnerAwardStanding(runner, fullResults, categories);
+
+  const renderStanding = (runner: Result) => {
+    const standing = standingFor(runner);
+    if (!standing) return <span className="text-dim">No configured age group</span>;
+    return (
+      <span className={`award-standing ${standing.isAwardWinner ? 'award-standing-winner' : ''}`}>
+        {standing.category} · #{standing.place}{standing.isAwardWinner ? ' award' : ''}
+      </span>
+    );
+  };
+
   if (events.length === 0) return (
     <div className="card">Initializing Results...</div>
   );
 
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', height: '100%' }}>
-      <div className="flex-between" style={{ marginBottom: 'var(--space-lg)', flexShrink: 0 }}>
-        <div className="flex-row" style={{ flexWrap: 'wrap' }}>
-            <h2 style={{ fontSize: (isExternal || isBrowser) ? '2.5rem' : '1.8rem', margin: 0 }}>
-                {showFull ? 'Full Standings' : 'Award Winners'}
+    <div className="awards-view">
+      <div className="awards-toolbar">
+        <div className="awards-controls">
+            <h2 style={{ fontSize: (isExternal || isBrowser) ? '2.5rem' : '1.8rem', margin: '0 var(--space-sm) 5px 0' }}>
+                Awards / Results
             </h2>
-            <select 
-                value={selectedID} 
-                onChange={e => setSelectedID(Number(e.target.value))} 
-                style={{ padding: '10px', fontSize: (isExternal || isBrowser) ? '1.2rem' : '1rem', minWidth: '200px' }}
-            >
-                {events.map(ev => <option key={ev.id} value={ev.id}>{ev.name}</option>)}
-            </select>
-            <select 
-                value={showFull ? 'standings' : 'awards'} 
-                onChange={e => setShowFull(e.target.value === 'standings')}
-                style={{ padding: '10px', fontSize: (isExternal || isBrowser) ? '1.2rem' : '1rem', backgroundColor: 'var(--accent)', color: 'white' }}
-            >
-                <option value="awards">Category Winners</option>
-                <option value="standings">Complete List</option>
-            </select>
-            {showFull && (
+            <label className="awards-control">
+                Event
+                <select className="awards-select" value={selectedID} onChange={e => setSelectedID(Number(e.target.value))}>
+                    {events.map(ev => <option key={ev.id} value={ev.id}>{ev.name}</option>)}
+                </select>
+            </label>
+            <label className="awards-control">
+                View
+                <select className="awards-select" value={showFull ? 'standings' : 'awards'} onChange={e => setShowFull(e.target.value === 'standings')}>
+                    <option value="awards">Category Winners</option>
+                    <option value="standings">Complete Results</option>
+                </select>
+            </label>
+            <label className="awards-control">
+                Find Runner
                 <input
+                    className="awards-search"
                     type="search"
                     value={resultSearch}
                     onChange={e => setResultSearch(e.target.value)}
-                    placeholder="Search name or bib"
-                    aria-label="Search results by name or bib number"
-                    style={{ padding: '10px 12px', fontSize: (isExternal || isBrowser) ? '1.2rem' : '1rem', minWidth: '220px' }}
+                    placeholder="Name or bib number"
+                    aria-label="Find a runner by name or bib number"
                 />
-            )}
+            </label>
         </div>
         {!isBrowser && !isExternal && (
-            <div className="flex-row">
+            <div className="awards-actions">
                 <button onClick={handleDownloadPDF} style={{ backgroundColor: 'var(--success)' }}>
                     Export PDF
                 </button>
-                {showFull && (
-                    <button onClick={handleExportCSV} style={{ backgroundColor: '#444' }}>
-                        Export CSV
-                    </button>
-                )}
+                <button onClick={handleExportCSV} style={{ backgroundColor: '#444' }}>
+                    Export CSV
+                </button>
             </div>
         )}
       </div>
 
       <div ref={scrollRef} style={{ flexGrow: 1, overflowY: 'auto' }}>
+        {normalizedSearch && !showFull && (
+          <div className="table-card runner-lookup">
+            <h3>Runner Lookup</h3>
+            <table>
+              <thead>
+                <tr>
+                  <th>Bib</th>
+                  <th>Name</th>
+                  <th>Overall</th>
+                  <th>Time</th>
+                  <th>Award / Age-Group Standing</th>
+                </tr>
+              </thead>
+              <tbody>
+                {matchingResults.map(runner => (
+                  <tr key={runner.bib_number}>
+                    <td><strong>{runner.bib_number}</strong></td>
+                    <td>{runner.first_name} {runner.last_name}</td>
+                    <td>#{runner.event_place}</td>
+                    <td style={{ fontWeight: 800, color: 'var(--accent)' }}>{renderTime(runner)}</td>
+                    <td>{renderStanding(runner)}</td>
+                  </tr>
+                ))}
+                {matchingResults.length === 0 && (
+                  <tr>
+                    <td colSpan={5} style={{ padding: 'var(--space-xl)', textAlign: 'center', color: 'var(--text-dim)' }}>
+                      No results match “{resultSearch.trim()}”.
+                    </td>
+                  </tr>
+                )}
+              </tbody>
+            </table>
+          </div>
+        )}
         {!showFull ? (
             <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(380px, 1fr))', gap: 'var(--space-lg)' }}>
                 {(categories || []).map(cat => (
@@ -166,7 +212,7 @@ export const AwardsView: React.FC<AwardsViewProps> = ({ events, mode = 'awards',
                         {(cat.winners || []).map((w, i) => (
                         <tr key={w.bib_number}>
                             <td style={{ width: '40px', color: 'var(--text-dim)' }}>{i + 1}.</td>
-                            <td><strong>{w.first_name} {w.last_name}</strong></td>
+                            <td><strong>{w.first_name} {w.last_name}</strong><span className="award-bib">Bib {w.bib_number}</span></td>
                             <td style={{ textAlign: 'right', fontWeight: 800, color: 'var(--accent)' }}>
                                 {renderTime(w)}
                             </td>
@@ -187,23 +233,25 @@ export const AwardsView: React.FC<AwardsViewProps> = ({ events, mode = 'awards',
                             <th>Name</th>
                             <th>G</th>
                             <th>Age</th>
+                            <th>Award / Age Group</th>
                             <th style={{ textAlign: 'right', paddingRight: 'var(--space-md)' }}>Time</th>
                         </tr>
                     </thead>
                     <tbody>
-                        {visibleResults.map(r => (
+                        {matchingResults.map(r => (
                             <tr key={r.bib_number}>
                                 <td style={{ paddingLeft: 'var(--space-md)' }}>{r.event_place}</td>
                                 <td><strong>{r.bib_number}</strong></td>
                                 <td>{r.first_name} {r.last_name}</td>
                                 <td>{r.gender}</td>
                                 <td>{r.age}</td>
+                                <td>{renderStanding(r)}</td>
                                 <td style={{ fontWeight: 800, color: 'var(--accent)', textAlign: 'right', paddingRight: 'var(--space-md)' }}>{renderTime(r)}</td>
                             </tr>
                         ))}
-                        {normalizedSearch && visibleResults.length === 0 && (
+                        {normalizedSearch && matchingResults.length === 0 && (
                             <tr>
-                                <td colSpan={6} style={{ padding: 'var(--space-xl)', textAlign: 'center', color: 'var(--text-dim)' }}>
+                                <td colSpan={7} style={{ padding: 'var(--space-xl)', textAlign: 'center', color: 'var(--text-dim)' }}>
                                     No results match “{resultSearch.trim()}”.
                                 </td>
                             </tr>
