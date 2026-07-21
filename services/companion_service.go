@@ -501,7 +501,14 @@ func (s *CompanionService) Submit(token string, entries []models.CompanionEntry)
 
 func (s *CompanionService) requireLeaseLocked(id companionIdentity, role string) error {
 	var holder string
-	if err := s.db.QueryRow("SELECT device_id FROM companion_role_leases WHERE session_id=? AND role=?", id.Session.ID, role).Scan(&holder); err != nil || holder != id.DeviceID {
+	err := s.db.QueryRow("SELECT device_id FROM companion_role_leases WHERE session_id=? AND role=?", id.Session.ID, role).Scan(&holder)
+	if err == sql.ErrNoRows {
+		return fmt.Errorf("this device does not hold the companion %s role; reacquire it before syncing", role)
+	}
+	if err != nil {
+		return err
+	}
+	if holder != id.DeviceID {
 		return ErrCompanionLease
 	}
 	return nil
@@ -538,7 +545,9 @@ func (s *CompanionService) submitLocked(id companionIdentity, entry models.Compa
 	if entry.CapturedAt > nowMS+int64(time.Minute/time.Millisecond) {
 		return models.CompanionAck{}, fmt.Errorf("capture time is too far in the future; recalibrate the phone clock")
 	}
-	if entry.CalibrationAt <= 0 || entry.CalibrationAt > nowMS+int64(time.Minute/time.Millisecond) || nowMS-entry.CalibrationAt > int64(30*time.Minute/time.Millisecond) {
+	if entry.ClientCapturedAt <= 0 || entry.CalibrationAt <= 0 ||
+		entry.CalibrationAt > entry.ClientCapturedAt+int64(time.Minute/time.Millisecond) ||
+		entry.ClientCapturedAt-entry.CalibrationAt > int64(30*time.Minute/time.Millisecond) {
 		return models.CompanionAck{}, fmt.Errorf("clock calibration is expired")
 	}
 	role := entry.Kind

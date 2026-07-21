@@ -207,6 +207,8 @@ func (s *TimingService) GetEventResults(eventID int) ([]models.Result, error) {
 
 	for i := range results {
 		results[i].EventPlace = i + 1
+		results[i].Time = formatStoredElapsedHundredths(results[i].Time)
+		results[i].UnofficialTime = formatStoredElapsedHundredths(results[i].UnofficialTime)
 		// Use official time if present, otherwise fallback to captured unofficial time for pace
 		activeTime := results[i].Time
 		if activeTime == "" {

@@ -76,7 +76,7 @@ export const LiveResults: React.FC<LiveResultsProps> = ({ events, selectedRace, 
   };
 
   const getDisplayTime = (r: Result) => {
-    if (r.time) return r.time;
+    if (r.time) return formatStoredElapsedHundredths(r.time);
     if (r.unofficial_time) return `~${formatStoredElapsedHundredths(r.unofficial_time)}`;
     return '--:--.--';
   };
