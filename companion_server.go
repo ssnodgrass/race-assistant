@@ -23,6 +23,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/hashicorp/mdns"
 	"github.com/libp2p/zeroconf/v2"
 	"github.com/ssnodgrass/race-assistant/models"
 	"github.com/ssnodgrass/race-assistant/services"
@@ -242,16 +243,21 @@ func setCompanionDiscoveryError(service *services.CompanionService, err error) {
 
 func startCompanionMDNS(service *services.CompanionService, hostname string) {
 	go func() {
-		var server *zeroconf.Server
+		var responder *mdns.Server
+		var announcer *zeroconf.Server
 		currentIP := ""
 		ticker := time.NewTicker(3 * time.Second)
 		defer ticker.Stop()
 		for {
 			ipString := preferredLANIP()
-			if ipString != currentIP || server == nil {
-				if server != nil {
-					server.Shutdown()
-					server = nil
+			if ipString != currentIP || responder == nil || announcer == nil {
+				if responder != nil {
+					_ = responder.Shutdown()
+					responder = nil
+				}
+				if announcer != nil {
+					announcer.Shutdown()
+					announcer = nil
 				}
 				if ipString == "127.0.0.1" {
 					setCompanionDiscoveryError(service, fmt.Errorf("no private LAN or hotspot address is available for %s", hostname))
@@ -261,9 +267,24 @@ func startCompanionMDNS(service *services.CompanionService, hostname string) {
 					if iface == nil {
 						err = fmt.Errorf("could not find the network interface for %s", ipString)
 					} else {
-						server, err = zeroconf.RegisterProxy("Race Assistant Companion", "_https._tcp", "local.", 8443, strings.TrimSuffix(hostname, ".")+".", []string{ipString}, []string{"path=/companion/"}, []net.Interface{*iface}, zeroconf.TTL(120))
+						var zone *mdns.MDNSService
+						zone, err = mdns.NewMDNSService("Race Assistant Companion", "_https._tcp", "local.", strings.TrimSuffix(hostname, ".")+".", 8443, []net.IP{net.ParseIP(ipString)}, []string{"path=/companion/"})
+						if err == nil {
+							responder, err = mdns.NewServer(&mdns.Config{Zone: zone, Iface: iface})
+						}
+						if err == nil {
+							announcer, err = zeroconf.RegisterProxy("Race Assistant Companion", "_https._tcp", "local.", 8443, strings.TrimSuffix(hostname, ".")+".", []string{ipString}, []string{"path=/companion/"}, []net.Interface{*iface}, zeroconf.TTL(120))
+						}
 					}
 					if err != nil {
+						if responder != nil {
+							_ = responder.Shutdown()
+							responder = nil
+						}
+						if announcer != nil {
+							announcer.Shutdown()
+							announcer = nil
+						}
 						setCompanionDiscoveryError(service, fmt.Errorf("could not advertise %s on %s: %w", hostname, ipString, err))
 						log.Printf("Companion mDNS error: %v", err)
 					} else {
