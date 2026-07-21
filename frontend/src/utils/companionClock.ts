@@ -23,6 +23,13 @@ export function correctCapture<T extends CapturedClockEvidence>(entry:T, post:Ca
 }
 
 export function formatElapsedHundredths(ms:number):string {
-  ms=Math.max(0,ms);const h=Math.floor(ms/3600000),m=Math.floor(ms%3600000/60000),s=Math.floor(ms%60000/1000),cs=Math.floor(ms%1000/10);
+  const hundredths=Math.round(Math.max(0,ms)/10),h=Math.floor(hundredths/360000),m=Math.floor(hundredths%360000/6000),s=Math.floor(hundredths%6000/100),cs=hundredths%100;
   return `${String(h).padStart(2,'0')}:${String(m).padStart(2,'0')}:${String(s).padStart(2,'0')}.${String(cs).padStart(2,'0')}`;
+}
+
+export function formatStoredElapsedHundredths(value:string):string {
+  const match=value.match(/^(\d+):(\d{2}):(\d{2})(?:\.(\d{1,3}))?$/);
+  if(!match)return value;
+  const milliseconds=Number(match[1])*3600000+Number(match[2])*60000+Number(match[3])*1000+Number((match[4]||'').padEnd(3,'0'));
+  return formatElapsedHundredths(milliseconds);
 }

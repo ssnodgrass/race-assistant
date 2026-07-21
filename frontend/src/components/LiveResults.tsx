@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { TimingService, AwardService } from '../../bindings/github.com/ssnodgrass/race-assistant/services';
 import { Event as RaceEvent, Result, Race } from '../../bindings/github.com/ssnodgrass/race-assistant/models';
 import { AwardCategory } from '../../bindings/github.com/ssnodgrass/race-assistant/services/models';
+import { formatStoredElapsedHundredths } from '../utils/companionClock';
 
 interface LiveResultsProps {
   events: RaceEvent[];
@@ -76,7 +77,7 @@ export const LiveResults: React.FC<LiveResultsProps> = ({ events, selectedRace, 
 
   const getDisplayTime = (r: Result) => {
     if (r.time) return r.time;
-    if (r.unofficial_time) return `~${r.unofficial_time}`;
+    if (r.unofficial_time) return `~${formatStoredElapsedHundredths(r.unofficial_time)}`;
     return '--:--.--';
   };
 

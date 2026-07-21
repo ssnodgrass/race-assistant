@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { correctCapture, formatElapsedHundredths, selectCalibration } from './companionClock';
+import { correctCapture, formatElapsedHundredths, formatStoredElapsedHundredths, selectCalibration } from './companionClock';
 
 describe('companion clock',()=>{
   it('uses the median offset from the three lowest latency samples',()=>{
@@ -11,7 +11,9 @@ describe('companion clock',()=>{
     expect(result.captured_at_unix_ms).toBe(1515);
     expect(result.uncertainty_ms).toBe(4);
   });
-  it('formats hundredths without losing the canonical milliseconds',()=>{
-    expect(formatElapsedHundredths(3_723_129)).toBe('01:02:03.12');
+  it('rounds display values to hundredths without losing the canonical milliseconds',()=>{
+    expect(formatElapsedHundredths(3_723_129)).toBe('01:02:03.13');
+    expect(formatElapsedHundredths(59_999)).toBe('00:01:00.00');
+    expect(formatStoredElapsedHundredths('01:02:03.126')).toBe('01:02:03.13');
   });
 });

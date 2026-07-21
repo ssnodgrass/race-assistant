@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import jsQR from 'jsqr';
-import { Calibration, correctCapture, formatElapsedHundredths, selectCalibration } from '../utils/companionClock';
+import { Calibration, correctCapture, formatElapsedHundredths, formatStoredElapsedHundredths, selectCalibration } from '../utils/companionClock';
 import { pairingCredentialFrom } from '../utils/companionPairing';
 import './CompanionApp.css';
 import './CompanionQueue.css';
@@ -243,7 +243,7 @@ export function CompanionApp() {
 
   const elapsed=useMemo(()=>state?.race_start?formatElapsedHundredths(tick-new Date(state.race_start).getTime()):'WAITING FOR START',[state?.race_start,tick]);
   const visibleAck=lastAck&&((lastAck.kind==='time'?'timer':lastAck.kind)===active)?lastAck:null;
-  const visibleAckValue=visibleAck?.bib_number.startsWith('GP:')?'Excluded finish':visibleAck?.bib_number||visibleAck?.elapsed;
+  const visibleAckValue=visibleAck?.bib_number.startsWith('GP:')?'Excluded finish':visibleAck?.bib_number||(visibleAck?.elapsed?formatStoredElapsedHundredths(visibleAck.elapsed):'');
 
   if(paired===null)return <div className="companion-shell companion-center">Connecting…</div>;
   const queuePanel=queueOpen?<LocalQueue entries={queuedEntries} currentSessionID={state?.session?.id} paired={paired===true} onClose={()=>setQueueOpen(false)} onDelete={deleteQueuedEntry} onClear={clearQueuedEntries}/>:null;

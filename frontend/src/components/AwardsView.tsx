@@ -3,6 +3,7 @@ import { AwardService, TimingService, ReportingService } from '../../bindings/gi
 import { DatabaseService } from '../../bindings/github.com/ssnodgrass/race-assistant';
 import { Event as RaceEvent, Result } from '../../bindings/github.com/ssnodgrass/race-assistant/models';
 import { AwardCategory } from '../../bindings/github.com/ssnodgrass/race-assistant/services/models';
+import { formatStoredElapsedHundredths } from '../utils/companionClock';
 
 interface AwardsViewProps {
   events: RaceEvent[];
@@ -92,7 +93,7 @@ export const AwardsView: React.FC<AwardsViewProps> = ({ events, mode = 'awards',
 
   const renderTime = (r: Result) => {
     if (r.time) return r.time;
-    if (r.unofficial_time) return `~${r.unofficial_time}`;
+    if (r.unofficial_time) return `~${formatStoredElapsedHundredths(r.unofficial_time)}`;
     return '--:--.--';
   };
 

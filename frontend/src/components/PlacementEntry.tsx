@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { TimingService } from '../../bindings/github.com/ssnodgrass/race-assistant/services';
 import { Participant, Event as RaceEvent, ChuteAssignment, Race } from '../../bindings/github.com/ssnodgrass/race-assistant/models';
+import { formatStoredElapsedHundredths } from '../utils/companionClock';
 
 interface PlacementEntryProps {
   race: Race;
@@ -382,7 +383,7 @@ export const PlacementEntry: React.FC<PlacementEntryProps> = ({ race, participan
                                         {isGenericRow && <span className="badge" style={{ marginLeft: '8px', backgroundColor: '#596273', color: 'white' }}>NO RESULT</span>}
                                     </td>
                                     <td>{getParticipantName(p.bib_number)}</td>
-                                    <td style={{ fontFamily: 'monospace', color: 'var(--text-dim)' }}>{p.unofficial_time || '--'}</td>
+                                    <td style={{ fontFamily: 'monospace', color: 'var(--text-dim)' }}>{p.unofficial_time ? formatStoredElapsedHundredths(p.unofficial_time) : '--'}</td>
                                     <td style={{ textAlign: 'right', paddingRight: 'var(--space-lg)' }}>
                                         <div className="flex-row" style={{ justifyContent: 'flex-end', gap: '4px' }}>
                                             <button onClick={(e) => { e.stopPropagation(); handleShift(p.place, 1); }} style={{ backgroundColor: '#333', padding: '4px 10px' }}>↓</button>

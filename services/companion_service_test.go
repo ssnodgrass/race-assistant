@@ -150,12 +150,60 @@ func TestCompanionSessionRecordsIntoSelectedEvent(t *testing.T) {
 	}
 }
 
+func TestCompanionBibCapturesApproximateChuteTime(t *testing.T) {
+	service, _, race, event, _ := setupCompanionTest(t)
+	session, err := service.StartSession(race.ID, event.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	bibber := pairCompanion(t, service, session.ID, "Bib")
+	if err = service.AcquireRole(bibber, "bib"); err != nil {
+		t.Fatal(err)
+	}
+	start := time.Now().Add(-2 * time.Minute).Truncate(time.Millisecond)
+	if _, err = service.db.Exec("UPDATE races SET start_time=? WHERE id=?", start, race.ID); err != nil {
+		t.Fatal(err)
+	}
+	captured := start.Add(time.Minute + 2345*time.Millisecond)
+	acks, err := service.Submit(bibber, []models.CompanionEntry{companionEntry("timed-bib", "bib", "101", captured.UnixMilli())})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if acks[0].Elapsed != "00:01:02.345" {
+		t.Fatalf("unexpected acknowledgement elapsed time: %+v", acks[0])
+	}
+	var unofficial string
+	if err = service.db.QueryRow("SELECT unofficial_time FROM chute_assignments WHERE race_id=? AND event_id=? AND place=1", race.ID, event.ID).Scan(&unofficial); err != nil {
+		t.Fatal(err)
+	}
+	if unofficial != "00:01:02.345" {
+		t.Fatalf("expected approximate chute time, got %q", unofficial)
+	}
+
+	// Existing companion rows from versions that stored a blank time are repaired
+	// when their database is opened.
+	if _, err = service.db.Exec("UPDATE chute_assignments SET unofficial_time='' WHERE race_id=? AND event_id=? AND place=1", race.ID, event.ID); err != nil {
+		t.Fatal(err)
+	}
+	if err = backfillCompanionChuteTimes(service.db); err != nil {
+		t.Fatal(err)
+	}
+	if err = service.db.QueryRow("SELECT unofficial_time FROM chute_assignments WHERE race_id=? AND event_id=? AND place=1", race.ID, event.ID).Scan(&unofficial); err != nil {
+		t.Fatal(err)
+	}
+	if unofficial != "00:01:02.345" {
+		t.Fatalf("expected legacy chute time to be repaired, got %q", unofficial)
+	}
+}
+
 func TestCompanionOfflineStartDerivesEarlierFinishCapture(t *testing.T) {
 	service, _, race, _, _ := setupCompanionTest(t)
 	session, _ := service.StartSession(race.ID, 0)
 	timer := pairCompanion(t, service, session.ID, "Timer")
+	bibber := pairCompanion(t, service, session.ID, "Bib")
 	starter := pairCompanion(t, service, session.ID, "Starter")
 	_ = service.AcquireRole(timer, "timer")
+	_ = service.AcquireRole(bibber, "bib")
 	_ = service.AcquireRole(starter, "start")
 	start := time.Now().Add(-20 * time.Minute).Truncate(time.Millisecond)
 	finish := start.Add(18*time.Minute + 123*time.Millisecond)
@@ -166,6 +214,17 @@ func TestCompanionOfflineStartDerivesEarlierFinishCapture(t *testing.T) {
 	_ = service.db.QueryRow("SELECT raw_time FROM timing_pulses WHERE race_id=?", race.ID).Scan(&raw)
 	if raw != "" {
 		t.Fatalf("expected pending raw time, got %q", raw)
+	}
+	bibCapture := start.Add(19*time.Minute + 456*time.Millisecond)
+	if _, err := service.Submit(bibber, []models.CompanionEntry{companionEntry("bib-before-start", "bib", "101", bibCapture.UnixMilli())}); err != nil {
+		t.Fatal(err)
+	}
+	var unofficial string
+	if err := service.db.QueryRow("SELECT unofficial_time FROM chute_assignments WHERE race_id=?", race.ID).Scan(&unofficial); err != nil {
+		t.Fatal(err)
+	}
+	if unofficial != "" {
+		t.Fatalf("expected pending unofficial time, got %q", unofficial)
 	}
 	if _, err := service.Submit(starter, []models.CompanionEntry{companionEntry("remote-start", "start", "", start.UnixMilli())}); err != nil {
 		t.Fatal(err)
@@ -180,6 +239,12 @@ func TestCompanionOfflineStartDerivesEarlierFinishCapture(t *testing.T) {
 	_ = service.db.QueryRow("SELECT raw_time FROM timing_pulses WHERE race_id=?", race.ID).Scan(&raw)
 	if raw != "00:18:00.123" {
 		t.Fatalf("expected derived time, got %q", raw)
+	}
+	if err := service.db.QueryRow("SELECT unofficial_time FROM chute_assignments WHERE race_id=?", race.ID).Scan(&unofficial); err != nil {
+		t.Fatal(err)
+	}
+	if unofficial != "00:19:00.456" {
+		t.Fatalf("expected derived approximate chute time, got %q", unofficial)
 	}
 }
 

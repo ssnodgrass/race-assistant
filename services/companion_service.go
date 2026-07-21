@@ -8,6 +8,7 @@ import (
 	"encoding/hex"
 	"errors"
 	"fmt"
+	"log"
 	"math/big"
 	"strconv"
 	"strings"
@@ -47,8 +48,13 @@ func NewCompanionService() *CompanionService {
 
 func (s *CompanionService) SetDB(db *sql.DB) {
 	s.mu.Lock()
-	defer s.mu.Unlock()
 	s.db = db
+	s.mu.Unlock()
+	if db != nil {
+		if err := backfillCompanionChuteTimes(db); err != nil {
+			log.Printf("Companion chute-time backfill failed: %v", err)
+		}
+	}
 }
 
 func (s *CompanionService) ConfigureServer(setup models.CompanionSetup) {
@@ -597,6 +603,17 @@ func (s *CompanionService) submitLocked(id companionIdentity, entry models.Compa
 		if err := tx.QueryRow("SELECT COALESCE(MAX(place),0)+1 FROM chute_assignments WHERE race_id=? AND event_id=?", id.Session.RaceID, id.Session.EventID).Scan(&place); err != nil {
 			return ack, err
 		}
+		var start sql.NullTime
+		if err := tx.QueryRow("SELECT start_time FROM races WHERE id=?", id.Session.RaceID).Scan(&start); err != nil {
+			return ack, err
+		}
+		unofficialTime := ""
+		if start.Valid {
+			if entry.CapturedAt < start.Time.UnixMilli() {
+				return ack, fmt.Errorf("bib capture precedes the race start; recalibrate the phone clock")
+			}
+			unofficialTime = formatElapsed(entry.CapturedAt - start.Time.UnixMilli())
+		}
 		bib := strings.TrimSpace(entry.BibNumber)
 		if bib == "" || bib == "?" {
 			var n int
@@ -639,10 +656,10 @@ func (s *CompanionService) submitLocked(id companionIdentity, entry models.Compa
 		} else if err != nil && err != sql.ErrNoRows {
 			return ack, err
 		}
-		if _, err := tx.Exec(`INSERT INTO chute_assignments(race_id,event_id,place,bib_number,unofficial_time) VALUES(?,?,?,?, '')`, id.Session.RaceID, id.Session.EventID, place, bib); err != nil {
+		if _, err := tx.Exec(`INSERT INTO chute_assignments(race_id,event_id,place,bib_number,unofficial_time) VALUES(?,?,?,?,?)`, id.Session.RaceID, id.Session.EventID, place, bib, unofficialTime); err != nil {
 			return ack, err
 		}
-		ack.Place, ack.BibNumber, storedValue = place, bib, bib
+		ack.Place, ack.BibNumber, ack.Elapsed, storedValue = place, bib, unofficialTime, bib
 	default:
 		return ack, fmt.Errorf("invalid companion entry kind")
 	}
@@ -693,7 +710,101 @@ func deriveCompanionTimesTx(tx *sql.Tx, raceID int, start time.Time) error {
 			return err
 		}
 	}
+	rows, err = tx.Query(`SELECT ca.event_id,ca.place,cr.captured_at_unix_ms
+		FROM chute_assignments ca
+		JOIN companion_requests cr
+		  ON cr.race_id=ca.race_id
+		 AND cr.event_id=ca.event_id
+		 AND cr.assigned_place=ca.place
+		 AND cr.value=ca.bib_number
+		 AND cr.operation='bib'
+		 AND cr.undone_at_unix_ms IS NULL
+		WHERE ca.race_id=? AND ca.unofficial_time=''`, raceID)
+	if err != nil {
+		return err
+	}
+	type chuteCapture struct {
+		eventID int
+		place   int
+		at      int64
+	}
+	var chuteCaptures []chuteCapture
+	for rows.Next() {
+		var capture chuteCapture
+		if err := rows.Scan(&capture.eventID, &capture.place, &capture.at); err != nil {
+			rows.Close()
+			return err
+		}
+		chuteCaptures = append(chuteCaptures, capture)
+	}
+	if err := rows.Close(); err != nil {
+		return err
+	}
+	for _, capture := range chuteCaptures {
+		if capture.at < start.UnixMilli() {
+			return fmt.Errorf("a queued bib capture precedes the race start; recalibrate before syncing the start")
+		}
+		if _, err := tx.Exec(`UPDATE chute_assignments SET unofficial_time=?
+			WHERE race_id=? AND event_id=? AND place=? AND unofficial_time=''`,
+			formatElapsed(capture.at-start.UnixMilli()), raceID, capture.eventID, capture.place); err != nil {
+			return err
+		}
+	}
 	return nil
+}
+
+func backfillCompanionChuteTimes(db *sql.DB) error {
+	rows, err := db.Query(`SELECT ca.race_id,ca.event_id,ca.place,cr.captured_at_unix_ms,r.start_time
+		FROM chute_assignments ca
+		JOIN companion_requests cr
+		  ON cr.race_id=ca.race_id
+		 AND cr.event_id=ca.event_id
+		 AND cr.assigned_place=ca.place
+		 AND cr.value=ca.bib_number
+		 AND cr.operation='bib'
+		 AND cr.undone_at_unix_ms IS NULL
+		JOIN races r ON r.id=ca.race_id
+		WHERE ca.unofficial_time='' AND r.start_time IS NOT NULL`)
+	if err != nil {
+		return err
+	}
+	type pendingChuteTime struct {
+		raceID  int
+		eventID int
+		place   int
+		at      int64
+		start   time.Time
+	}
+	var pending []pendingChuteTime
+	for rows.Next() {
+		var capture pendingChuteTime
+		if err := rows.Scan(&capture.raceID, &capture.eventID, &capture.place, &capture.at, &capture.start); err != nil {
+			rows.Close()
+			return err
+		}
+		if capture.at >= capture.start.UnixMilli() {
+			pending = append(pending, capture)
+		}
+	}
+	if err := rows.Close(); err != nil {
+		return err
+	}
+	if len(pending) == 0 {
+		return nil
+	}
+	tx, err := db.Begin()
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+	for _, capture := range pending {
+		if _, err := tx.Exec(`UPDATE chute_assignments SET unofficial_time=?
+			WHERE race_id=? AND event_id=? AND place=? AND unofficial_time=''`,
+			formatElapsed(capture.at-capture.start.UnixMilli()), capture.raceID, capture.eventID, capture.place); err != nil {
+			return err
+		}
+	}
+	return tx.Commit()
 }
 
 func (s *CompanionService) Undo(token, requestID string) error {
