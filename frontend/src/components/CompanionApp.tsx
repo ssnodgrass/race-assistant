@@ -140,12 +140,14 @@ export function CompanionApp() {
   const [tick,setTick]=useState(Date.now());
   const armTimer=useRef<number>();
   const flushing=useRef(false);
+  const flushRequested=useRef(false);
   const startCapturePending=useRef(false);
   const pairedRef=useRef(paired===true);
   const calRef=useRef<Calibration|null>(cal);
   const stateRef=useRef<State|null>(state);
   const lastServerContact=useRef(0);
   const lastReconnectAttempt=useRef(0);
+  const lastFlushAttempt=useRef(0);
 
   const api=async(path:string,init?:RequestInit)=>{
     const controller=new AbortController();
@@ -176,7 +178,10 @@ export function CompanionApp() {
   };
 
   const flush=async()=>{
-    if(flushing.current||!pairedRef.current)return;
+    if(!pairedRef.current)return;
+    if(flushing.current){flushRequested.current=true;return}
+    flushRequested.current=false;
+    lastFlushAttempt.current=Date.now();
     flushing.current=true;
     try{
       const sessionID=stateRef.current?.session?.id;
@@ -204,21 +209,30 @@ export function CompanionApp() {
         if(entry.kind==='start'){startCapturePending.current=false;setHeldRole(null);localStorage.removeItem(ROLE_KEY)}
       }
       await refreshPending();await loadState();
-    }catch(e){const status=(e as {status?:number}).status;if(!status){setOnline(false);setMessage('SAVED OFFLINE · WAITING FOR LAPTOP')}else{setMessage(`QUEUED · ${String(e)}`)}}finally{flushing.current=false}
+    }catch(e){const status=(e as {status?:number}).status;if(!status){setOnline(false);setMessage('SAVED OFFLINE · WAITING FOR LAPTOP')}else{setMessage(`QUEUED · ${String(e)}`)}}finally{flushing.current=false;if(flushRequested.current){flushRequested.current=false;void flush()}}
+  };
+
+  const flushCurrentSessionQueue=async()=>{
+    const sessionID=stateRef.current?.session?.id;
+    if(!sessionID||!pairedRef.current)return;
+    const entries=await allEntries();
+    if(entries.some(entry=>entry.session_id===sessionID)&&Date.now()-lastFlushAttempt.current>=4000)void flush();
   };
 
   useEffect(()=>{history.replaceState(null,'',location.pathname);let refreshing=false;const reloadForUpdate=()=>{if(!refreshing){refreshing=true;location.reload()}};if('serviceWorker'in navigator){const hadController=Boolean(navigator.serviceWorker.controller);if(hadController)navigator.serviceWorker.addEventListener('controllerchange',reloadForUpdate);navigator.serviceWorker.register('/companion-sw.js',{scope:'/companion/'}).then(registration=>registration.update()).catch(()=>{});navigator.storage?.persist?.().catch(()=>{})}lastReconnectAttempt.current=Date.now();loadState();refreshPending();const reconnect=()=>{lastReconnectAttempt.current=Date.now();if(pairedRef.current)void flush();else void loadState()};const timer=setInterval(()=>{const now=Date.now();const isPaired=pairedRef.current;const staleAfter=isPaired?3500:9000;if(!isPaired&&now-lastReconnectAttempt.current>4000)reconnect();if(now-lastServerContact.current>staleAfter){setOnline(false);if(isPaired&&now-lastReconnectAttempt.current>4000)reconnect()}},1000);const on=()=>reconnect();addEventListener('online',on);return()=>{clearInterval(timer);removeEventListener('online',on);navigator.serviceWorker?.removeEventListener('controllerchange',reloadForUpdate)}},[]);
-  useEffect(()=>{if(!paired)return;const stream=new EventSource('/api/companion/events',{withCredentials:true});const receiveState=(event:MessageEvent)=>{try{acceptState(JSON.parse(event.data) as State)}catch{setOnline(false)}};const serverEvent=()=>{lastServerContact.current=Date.now();setOnline(true)};const unauthorized=()=>{serverEvent();stream.close();clearAuthorization()};stream.addEventListener('state',receiveState as EventListener);stream.addEventListener('unauthorized',unauthorized);stream.addEventListener('unavailable',()=>{serverEvent();setMessage('COMPANION SESSION UNAVAILABLE')});stream.onerror=()=>{if(Date.now()-lastServerContact.current>3500)setOnline(false)};return()=>stream.close()},[paired]);
+  useEffect(()=>{if(!paired)return;const stream=new EventSource('/api/companion/events',{withCredentials:true});const receiveState=(event:MessageEvent)=>{try{acceptState(JSON.parse(event.data) as State);void flushCurrentSessionQueue()}catch{setOnline(false)}};const serverEvent=()=>{lastServerContact.current=Date.now();setOnline(true)};const unauthorized=()=>{serverEvent();stream.close();clearAuthorization()};stream.addEventListener('state',receiveState as EventListener);stream.addEventListener('unauthorized',unauthorized);stream.addEventListener('unavailable',()=>{serverEvent();setMessage('COMPANION SESSION UNAVAILABLE')});stream.onerror=()=>{if(Date.now()-lastServerContact.current>3500)setOnline(false)};return()=>stream.close()},[paired]);
   useEffect(()=>{if(paired)calibrate().catch(()=>{});},[paired]);
   useEffect(()=>{const timer=setInterval(()=>setTick(Date.now()),50);return()=>clearInterval(timer)},[]);
   useEffect(()=>{if(!heldRole||!('wakeLock'in navigator))return;let lock:any;(navigator as any).wakeLock.request('screen').then((v:any)=>lock=v).catch(()=>{});return()=>lock?.release()},[heldRole]);
 
   const acceptPairingScan=useCallback((value:string)=>{const credential=pairingCredentialFrom(value);setPairCredential(credential);setPairCode('');setScannerOpen(false);setMessage('PAIRING QR SCANNED · NAME THIS DEVICE AND PAIR')},[]);
   const pair=async(credential=pairCredential||pairCode)=>{if(pairingBusy)return;try{setPairingBusy(true);setMessage('PAIRING…');const data=await api('/api/companion/pair',{method:'POST',body:JSON.stringify({token:pairingCredentialFrom(credential),name})});localStorage.setItem('companion-name',name);acceptState(data);setMessage('PAIRED');await refreshPending();await calibrate()}catch(e){setMessage(String(e).replace(/^Error:\s*/,''))}finally{setPairingBusy(false)}};
-  const retryConnection=async()=>{setMessage('RECONNECTING…');if(await loadState()){setMessage('CONNECTED');if(pairedRef.current){calibrate().catch(()=>{});void flush()}}else setMessage(`CANNOT REACH ${location.host}`)};
+  const retryConnection=async()=>{setMessage('RECONNECTING…');if(await loadState()){setMessage('CONNECTED');if(pairedRef.current)void flush()}else setMessage(`CANNOT REACH ${location.host}`)};
   const leaveRace=async()=>{const sessionID=stateRef.current?.session?.id;const currentEntries=sessionID?(await allEntries()).filter(entry=>entry.session_id===sessionID):[];if(currentEntries.length>0){await refreshPending();setMessage('REVIEW OR SYNC THE CURRENT QUEUE BEFORE CHANGING RACES');setQueueOpen(true);return}if(!online){setMessage('RECONNECT TO THE LAPTOP BEFORE CHANGING RACES');return}if(!window.confirm(`Leave ${stateRef.current?.race_name||'this race'} and pair this device again?`))return;try{setMessage('LEAVING RACE…');await api('/api/companion/unpair',{method:'POST'});clearAuthorization();stateRef.current=null;setState(null);localStorage.removeItem(STATE_KEY);localStorage.removeItem('companion-calibration');setCal(null);calRef.current=null;setPairCredential('');setPairCode('');setLastAck(null);setMessage('READY TO SCAN A NEW PAIRING QR');await refreshPending()}catch(e){setMessage(`COULD NOT LEAVE RACE · ${String(e).replace(/^Error:\s*/,'')}`)}};
   const acquire=async(role:Role)=>{try{await api(`/api/companion/role/${role}`,{method:'PUT'});localStorage.setItem(ROLE_KEY,role);setHeldRole(role);setActive(role);if(role==='start'){setArmed(false);setMessage('START RESERVED · CALIBRATING…');try{await calibrate();setMessage('START READY · SAFE TO LEAVE WI-FI')}catch{setOnline(false);setMessage('START RESERVED · RECONNECT TO CALIBRATE')}}else setMessage(`${role.toUpperCase()} READY`)}catch(e){setMessage(String(e))}};
-  const release=async()=>{if(!heldRole||pending)return;await api(`/api/companion/role/${heldRole}`,{method:'DELETE'});localStorage.removeItem(ROLE_KEY);setHeldRole(null);setArmed(false);setMessage('ROLE RELEASED')};
+  const entryRole=(entry:Entry):Role=>entry.kind==='time'?'timer':entry.kind;
+  const hasPendingForRole=(role:Role)=>queuedEntries.some(entry=>entry.session_id===stateRef.current?.session?.id&&entryRole(entry)===role);
+  const release=async()=>{const role=heldRole;if(!role)return;const sessionID=stateRef.current?.session?.id;const entries=await allEntries();if(entries.some(entry=>entry.session_id===sessionID&&entryRole(entry)===role)){setMessage(`${role.toUpperCase()} QUEUE MUST SYNC BEFORE RELEASING THIS ROLE`);await refreshPending();return}try{await api(`/api/companion/role/${role}`,{method:'DELETE'});localStorage.removeItem(ROLE_KEY);setHeldRole(null);setArmed(false);setMessage('ROLE RELEASED')}catch(e){setMessage(`COULD NOT RELEASE ROLE · ${String(e).replace(/^Error:\s*/,'')}`)}};
 
   const capture=async(kind:Entry['kind'],bibNumber='')=>{
     const current=cal;
@@ -244,6 +258,9 @@ export function CompanionApp() {
   const elapsed=useMemo(()=>state?.race_start?formatElapsedHundredths(tick-new Date(state.race_start).getTime()):'WAITING FOR START',[state?.race_start,tick]);
   const visibleAck=lastAck&&((lastAck.kind==='time'?'timer':lastAck.kind)===active)?lastAck:null;
   const visibleAckValue=visibleAck?.bib_number.startsWith('GP:')?'Excluded finish':visibleAck?.bib_number||(visibleAck?.elapsed?formatStoredElapsedHundredths(visibleAck.elapsed):'');
+  const heldRolePending=heldRole?hasPendingForRole(heldRole):false;
+  const startQueuePending=hasPendingForRole('start');
+  const heldRoleLabel=heldRole==='timer'?'Finish Timer':heldRole==='bib'?'Bib Chute':'Start';
 
   if(paired===null)return <div className="companion-shell companion-center">Connecting…</div>;
   const queuePanel=queueOpen?<LocalQueue entries={queuedEntries} currentSessionID={state?.session?.id} paired={paired===true} onClose={()=>setQueueOpen(false)} onDelete={deleteQueuedEntry} onClear={clearQueuedEntries}/>:null;
@@ -280,7 +297,7 @@ export function CompanionApp() {
     <main style={{overflowY:'auto',flexDirection:'column',WebkitOverflowScrolling:'touch',overscrollBehavior:'contain'}}>
       {active==='start'&&state?.race_start?<section className="companion-center" style={{flex:'1 0 auto'}}><div style={{fontSize:'4rem'}}>✓</div><h2 style={{color:'#70e094',margin:0}}>Official Start Recorded</h2><div style={{font:'800 1.5rem monospace'}}>{new Date(state.race_start).toLocaleTimeString()}</div><p>The laptop accepted the official start and automatically released this phone's Start role.</p></section>:
       heldRole!==active?<div className="companion-center role-gate" style={{flex:'1 0 auto'}}><h2>{active==='start'?'Start Line':active==='timer'?'Finish Timer':'Bib Chute'}</h2><p>{online?'Acquire this exclusive role before recording. For a remote start, acquire and calibrate before leaving the laptop network.':'Role acquisition requires the laptop. Reconnect to its network, acquire Start, then leave while keeping this PWA ready.'}</p><button disabled={!online} onClick={()=>acquire(active)}>Acquire {active} role</button></div>:
-      active==='start'?<section className="companion-center" style={{flex:'1 0 auto'}}><div className={`calibration ${cal&&Date.now()-cal.at<1800000&&cal.uncertainty<=50?'good':'bad'}`}>Clock uncertainty {cal?`±${Math.round(cal.uncertainty)} ms`:'unknown'}</div>{online&&<button onClick={()=>{setMessage('CALIBRATING…');calibrate().then(()=>setMessage('CLOCK READY · SAFE TO LEAVE WI-FI')).catch(()=>setMessage('CALIBRATION FAILED'))}}>Recalibrate Clock</button>}{!armed?<button className="arm-button" onPointerDown={()=>armTimer.current=window.setTimeout(()=>setArmed(true),2000)} onPointerUp={()=>clearTimeout(armTimer.current)} onPointerCancel={()=>clearTimeout(armTimer.current)}>Hold 2 seconds to arm</button>:<button className="start-button" disabled={pending>0} onPointerDown={()=>capture('start')}>{pending>0?'START SAVED':'START RACE'}</button>}<p>{pending>0?'Start saved on this phone. Keep the role reserved and reconnect to the laptop to make it official.':online?'Start role reserved. Recalibrate immediately before leaving; the gun tap will be saved on this phone.':'Start role reserved offline. The gun tap will be saved locally; return to the laptop network afterward to set the official start.'}</p><button style={{background:'#353d49'}} disabled={!online||pending>0} onClick={release}>{pending>0?'Start Queued — Role Reserved':online?'Release Start Role':'Reconnect to Release Start'}</button></section>:
+      active==='start'?<section className="companion-center" style={{flex:'1 0 auto'}}><div className={`calibration ${cal&&Date.now()-cal.at<1800000&&cal.uncertainty<=50?'good':'bad'}`}>Clock uncertainty {cal?`±${Math.round(cal.uncertainty)} ms`:'unknown'}</div>{online&&<button onClick={()=>{setMessage('CALIBRATING…');calibrate().then(()=>setMessage('CLOCK READY · SAFE TO LEAVE WI-FI')).catch(()=>setMessage('CALIBRATION FAILED'))}}>Recalibrate Clock</button>}{!armed?<button className="arm-button" onPointerDown={()=>armTimer.current=window.setTimeout(()=>setArmed(true),2000)} onPointerUp={()=>clearTimeout(armTimer.current)} onPointerCancel={()=>clearTimeout(armTimer.current)}>Hold 2 seconds to arm</button>:<button className="start-button" disabled={startQueuePending} onPointerDown={()=>capture('start')}>{startQueuePending?'START SAVED':'START RACE'}</button>}<p>{startQueuePending?'Start saved on this phone. Keep the role reserved and reconnect to the laptop to make it official.':online?'Start role reserved. Recalibrate immediately before leaving; the gun tap will be saved on this phone.':'Start role reserved offline. The gun tap will be saved locally; return to the laptop network afterward to set the official start.'}</p><button style={{background:'#353d49'}} disabled={!online||startQueuePending} onClick={release}>{startQueuePending?'Start Queued — Role Reserved':online?'Release Start Role':'Reconnect to Release Start'}</button></section>:
       active==='timer'?<section className="timer-screen" style={{flex:'1 0 auto'}}><div className="sequence">NEXT FINISH #{state?.next_time_place??1}{pending?` + ${pending} queued`:''}</div><button className="finish-button" onPointerDown={e=>{e.preventDefault();capture('time')}}>RECORD<br/>FINISH</button></section>:
       <section className="bib-screen" style={{flexShrink:0,margin:'0 auto'}}><div className="sequence">NEXT BIB POSITION #{state?.next_bib_place??1}</div><input className="bib-display" inputMode="text" autoCapitalize="characters" value={bib} onChange={e=>setBib(e.target.value.toUpperCase())} placeholder="BIB" onKeyDown={e=>{if(e.key==='Enter')submitBib()}}/>
         <div className="keypad">{['1','2','3','4','5','6','7','8','9','ABC','0','⌫'].map(k=><button key={k} onClick={()=>k==='⌫'?setBib(v=>v.slice(0,-1)):k==='ABC'?document.querySelector<HTMLInputElement>('.bib-display')?.focus():setBib(v=>v+k)}>{k}</button>)}</div>
@@ -288,6 +305,6 @@ export function CompanionApp() {
       </section>}
       {visibleAck&&<div className="last-ack" style={{width:'100%',flexShrink:0}}><strong>#{visibleAck.place} {visibleAckValue}</strong><span>{visibleAck.participant_name} {visibleAck.event_name}</span><button onClick={undo}>Undo last</button></div>}
     </main>
-    <footer style={{flexShrink:0,paddingBottom:'max(16px, env(safe-area-inset-bottom))'}}><div className={`companion-message ${visibleAck?.warning?'warning':''}`}>{message||'READY'}</div>{pending+orphaned>0&&<div style={{display:'flex',alignItems:'center',justifyContent:'space-between',gap:8,marginTop:8,padding:'8px 10px',border:'1px solid #a66030',borderRadius:8,color:'#ffad42'}}><span>{pending} current · {orphaned} older queued</span><button style={{background:'#526173',padding:'8px 12px'}} onClick={()=>setQueueOpen(true)}>Review</button></div>}<button className="release" disabled={!heldRole||pending>0||active==='start'} onClick={release}>Release role</button><button style={{width:'100%',marginTop:8,padding:9,background:'transparent',border:'1px solid #485363',color:'#b8c3d1'}} onClick={()=>void leaveRace()}>{pending>0?'Sync queue before changing race':online?'Leave race / pair again':'Reconnect to change race'}</button></footer>
+    <footer style={{flexShrink:0,paddingBottom:'max(16px, env(safe-area-inset-bottom))'}}><div className={`companion-message ${visibleAck?.warning?'warning':''}`}>{message||'READY'}</div>{pending+orphaned>0&&<div style={{display:'flex',alignItems:'center',justifyContent:'space-between',gap:8,marginTop:8,padding:'8px 10px',border:'1px solid #a66030',borderRadius:8,color:'#ffad42'}}><span>{pending} current · {orphaned} older queued</span><div style={{display:'flex',gap:6}}>{pending>0&&online&&<button style={{background:'#277a42',padding:'8px 12px'}} onClick={()=>void flush()}>Sync now</button>}<button style={{background:'#526173',padding:'8px 12px'}} onClick={()=>setQueueOpen(true)}>Review</button></div></div>}{heldRole&&active!=='start'&&<button className="release" style={{display:'inline-flex'}} disabled={heldRolePending} onClick={release}>{heldRolePending?`${heldRoleLabel} Queue Pending — Sync Before Release`:`Release ${heldRoleLabel} Role`}</button>}<button style={{width:'100%',marginTop:8,padding:9,background:'transparent',border:'1px solid #485363',color:'#b8c3d1'}} onClick={()=>void leaveRace()}>{pending>0?'Sync queue before changing race':online?'Leave race / pair again':'Reconnect to change race'}</button></footer>
   </div>;
 }

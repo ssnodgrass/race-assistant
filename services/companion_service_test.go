@@ -54,8 +54,55 @@ func pairCompanion(t *testing.T, service *CompanionService, sessionID, name stri
 }
 
 func companionEntry(id, kind, bib string, captured int64) models.CompanionEntry {
-	now := time.Now().UnixMilli()
-	return models.CompanionEntry{RequestID: id, Kind: kind, BibNumber: bib, CapturedAt: captured, ClientCapturedAt: captured, CalibrationAt: now, UncertaintyMS: 5}
+	return models.CompanionEntry{RequestID: id, Kind: kind, BibNumber: bib, CapturedAt: captured, ClientCapturedAt: captured, CalibrationAt: captured - 1000, UncertaintyMS: 5}
+}
+
+func TestCompanionDelayedOfflineStartUsesCaptureTimeCalibration(t *testing.T) {
+	service, _, race, _, _ := setupCompanionTest(t)
+	session, err := service.StartSession(race.ID, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	starter := pairCompanion(t, service, session.ID, "Remote starter")
+	if err = service.AcquireRole(starter, "start"); err != nil {
+		t.Fatal(err)
+	}
+	calibratedAt := time.Now().Add(-time.Hour).Truncate(time.Millisecond)
+	capturedAt := calibratedAt.Add(5 * time.Second)
+	entry := companionEntry("delayed-offline-start", "start", "", capturedAt.UnixMilli())
+	entry.CalibrationAt = calibratedAt.UnixMilli()
+	acks, err := service.Submit(starter, []models.CompanionEntry{entry})
+	if err != nil {
+		t.Fatalf("valid offline start was rejected when synced later: %v", err)
+	}
+	if len(acks) != 1 || acks[0].Status != "accepted" {
+		t.Fatalf("unexpected start acknowledgement: %+v", acks)
+	}
+	var stored time.Time
+	if err = service.db.QueryRow("SELECT start_time FROM races WHERE id=?", race.ID).Scan(&stored); err != nil {
+		t.Fatal(err)
+	}
+	if stored.UnixMilli() != capturedAt.UnixMilli() {
+		t.Fatalf("stored start changed from capture time: got %v want %v", stored, capturedAt)
+	}
+}
+
+func TestCompanionRejectsCalibrationExpiredAtCaptureTime(t *testing.T) {
+	service, _, race, _, _ := setupCompanionTest(t)
+	session, err := service.StartSession(race.ID, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	starter := pairCompanion(t, service, session.ID, "Stale starter")
+	if err = service.AcquireRole(starter, "start"); err != nil {
+		t.Fatal(err)
+	}
+	capturedAt := time.Now().Truncate(time.Millisecond)
+	entry := companionEntry("stale-calibration-start", "start", "", capturedAt.UnixMilli())
+	entry.CalibrationAt = capturedAt.Add(-31 * time.Minute).UnixMilli()
+	if _, err = service.Submit(starter, []models.CompanionEntry{entry}); err == nil || !strings.Contains(err.Error(), "clock calibration is expired") {
+		t.Fatalf("expected stale-at-capture calibration to be rejected, got %v", err)
+	}
 }
 
 func TestCompanionCommonChuteReconcilesMixedEvents(t *testing.T) {

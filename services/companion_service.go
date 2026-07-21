@@ -538,7 +538,9 @@ func (s *CompanionService) submitLocked(id companionIdentity, entry models.Compa
 	if entry.CapturedAt > nowMS+int64(time.Minute/time.Millisecond) {
 		return models.CompanionAck{}, fmt.Errorf("capture time is too far in the future; recalibrate the phone clock")
 	}
-	if entry.CalibrationAt <= 0 || entry.CalibrationAt > nowMS+int64(time.Minute/time.Millisecond) || nowMS-entry.CalibrationAt > int64(30*time.Minute/time.Millisecond) {
+	if entry.ClientCapturedAt <= 0 || entry.CalibrationAt <= 0 ||
+		entry.CalibrationAt > entry.ClientCapturedAt+int64(time.Minute/time.Millisecond) ||
+		entry.ClientCapturedAt-entry.CalibrationAt > int64(30*time.Minute/time.Millisecond) {
 		return models.CompanionAck{}, fmt.Errorf("clock calibration is expired")
 	}
 	role := entry.Kind
