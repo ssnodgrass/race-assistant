@@ -369,6 +369,35 @@ func (s *CompanionService) getStateLocked(sessionID string) (models.CompanionSta
 	}
 	_ = s.db.QueryRow("SELECT COUNT(*),COALESCE(MAX(place),0)+1 FROM timing_pulses WHERE race_id=? AND event_id=?", sess.RaceID, sess.EventID).Scan(&state.TimeCount, &state.NextTimePlace)
 	_ = s.db.QueryRow("SELECT COUNT(*),COALESCE(MAX(place),0)+1 FROM chute_assignments WHERE race_id=? AND event_id=?", sess.RaceID, sess.EventID).Scan(&state.BibCount, &state.NextBibPlace)
+	var lastBib models.CompanionLastBib
+	err = s.db.QueryRow(`
+		SELECT COALESCE(cr.request_id,''),ca.place,ca.bib_number,
+			COALESCE(TRIM(p.first_name || ' ' || p.last_name),''),
+			COALESCE(e.name,''),ca.entered_at_unix_ms
+		FROM chute_assignments ca
+		LEFT JOIN participants p ON p.race_id=ca.race_id
+			AND p.bib_number=CASE
+				WHEN ca.bib_number LIKE 'DUP:%' THEN SUBSTR(ca.bib_number,5)
+				ELSE ca.bib_number
+			END
+		LEFT JOIN events e ON e.id=p.event_id
+		LEFT JOIN companion_requests cr ON cr.race_id=ca.race_id
+			AND cr.event_id=ca.event_id
+			AND cr.operation='bib'
+			AND cr.assigned_place=ca.place
+			AND cr.value=ca.bib_number
+			AND cr.accepted_at_unix_ms=ca.entered_at_unix_ms
+			AND cr.undone_at_unix_ms IS NULL
+		WHERE ca.race_id=? AND ca.event_id=?
+		ORDER BY ca.entered_at_unix_ms DESC,ca.place DESC
+		LIMIT 1`, sess.RaceID, sess.EventID).Scan(
+		&lastBib.RequestID, &lastBib.Place, &lastBib.BibNumber,
+		&lastBib.ParticipantName, &lastBib.EventName, &lastBib.EnteredAt)
+	if err == nil {
+		state.LastBib = &lastBib
+	} else if err != sql.ErrNoRows {
+		return state, err
+	}
 	state.DuplicateBibs, _ = duplicateBibs(s.db, sess.RaceID)
 	return state, nil
 }
@@ -665,7 +694,7 @@ func (s *CompanionService) submitLocked(id companionIdentity, entry models.Compa
 		} else if err != nil && err != sql.ErrNoRows {
 			return ack, err
 		}
-		if _, err := tx.Exec(`INSERT INTO chute_assignments(race_id,event_id,place,bib_number,unofficial_time) VALUES(?,?,?,?,?)`, id.Session.RaceID, id.Session.EventID, place, bib, unofficialTime); err != nil {
+		if _, err := tx.Exec(`INSERT INTO chute_assignments(race_id,event_id,place,bib_number,unofficial_time,entered_at_unix_ms) VALUES(?,?,?,?,?,?)`, id.Session.RaceID, id.Session.EventID, place, bib, unofficialTime, now); err != nil {
 			return ack, err
 		}
 		ack.Place, ack.BibNumber, ack.Elapsed, storedValue = place, bib, unofficialTime, bib

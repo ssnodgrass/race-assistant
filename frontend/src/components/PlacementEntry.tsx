@@ -2,6 +2,7 @@ import React, { useState, useEffect, useRef } from 'react';
 import { TimingService } from '../../bindings/github.com/ssnodgrass/race-assistant/services';
 import { Participant, Event as RaceEvent, ChuteAssignment, Race } from '../../bindings/github.com/ssnodgrass/race-assistant/models';
 import { formatStoredElapsedHundredths } from '../utils/companionClock';
+import { latestChangedPlacement } from '../utils/placementActivity';
 
 interface PlacementEntryProps {
   race: Race;
@@ -46,7 +47,10 @@ export const PlacementEntry: React.FC<PlacementEntryProps> = ({ race, participan
   const nextPlaceRef = useRef(1);
   const targetDirtyRef = useRef(false);
   const placementLoadInFlight = useRef(false);
+  const placementsRef = useRef<ChuteAssignment[]>([]);
+  const participantsRef = useRef(participants);
   useEffect(() => { currentPlaceRef.current = place; }, [place]);
+  useEffect(() => { participantsRef.current = participants; }, [participants]);
 
   useEffect(() => {
     if (events.length > 0 && selectedEventID !== 0 && !events.some(ev => ev.id === selectedEventID)) {
@@ -56,6 +60,9 @@ export const PlacementEntry: React.FC<PlacementEntryProps> = ({ race, participan
 
   useEffect(() => {
     targetDirtyRef.current = false;
+    placementsRef.current = [];
+    setLastScanned(null);
+    setDuplicateScan(null);
     loadPlacements();
 
     const handleGlobalClick = (e: MouseEvent) => {
@@ -112,7 +119,10 @@ export const PlacementEntry: React.FC<PlacementEntryProps> = ({ race, participan
     try {
       const data = await TimingService.ListPlacementsByEvent(race.id, selectedEventID);
         const sorted = data || [];
+        const latestChange = latestChangedPlacement(placementsRef.current, sorted);
+        placementsRef.current = sorted;
         setPlacements(sorted);
+        if (latestChange) setLatestPlacement(latestChange, sorted);
         const next = (sorted.length > 0) ? Math.max(...sorted.map(d => d.place)) + 1 : 1;
         const placeholderNumbers = sorted
           .filter(d => /^PH:\d+$/i.test(d.bib_number))
@@ -149,13 +159,42 @@ export const PlacementEntry: React.FC<PlacementEntryProps> = ({ race, participan
   };
 
   const getParticipantName = (bibNumber: string) => {
-    const participant = participants.find(reg => reg.bib_number === bibNumber);
+    const participant = participantsRef.current.find(reg => reg.bib_number === bibNumber);
     if (participant) return `${participant.first_name} ${participant.last_name}`.trim();
     if (bibNumber === "?") return "Placeholder";
     if (isPlaceholderMarker(bibNumber)) return `Placeholder #${placeholderNumberFromMarker(bibNumber)}`;
     if (isGenericMarker(bibNumber)) return "Excluded finish — not included in results";
     if (isDuplicateMarker(bibNumber)) return `Duplicate scan for bib ${duplicateBibFromMarker(bibNumber)}`;
     return "Unknown Runner";
+  };
+
+  const setLatestPlacement = (placement: ChuteAssignment, allPlacements: ChuteAssignment[]) => {
+    if (isDuplicateMarker(placement.bib_number)) {
+      const scannedBib = duplicateBibFromMarker(placement.bib_number);
+      const originalPlace = allPlacements.find(
+        item => item.bib_number === scannedBib && item.place !== placement.place,
+      )?.place || 0;
+      setDuplicateScan({
+        bib: scannedBib,
+        originalPlace,
+        duplicatePlace: placement.place,
+      });
+      setLastScanned({
+        place: placement.place,
+        bib: scannedBib,
+        name: originalPlace
+          ? `DUPLICATE - already at place ${originalPlace}`
+          : 'DUPLICATE',
+      });
+      return;
+    }
+
+    setDuplicateScan(null);
+    setLastScanned({
+      place: placement.place,
+      bib: placement.bib_number,
+      name: getParticipantName(placement.bib_number),
+    });
   };
 
   const handleAssign = async (p: number, b: string, skipConfirm = false) => {

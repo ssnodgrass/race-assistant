@@ -3,6 +3,7 @@ package repository
 import (
 	"database/sql"
 	"fmt"
+	"time"
 
 	"github.com/ssnodgrass/race-assistant/models"
 )
@@ -131,8 +132,11 @@ func (r *TimingRepository) UpsertChuteAssignment(ca *models.ChuteAssignment) err
 	if err := r.checkDB(); err != nil {
 		return err
 	}
-	_, err := r.db.Exec("INSERT OR REPLACE INTO chute_assignments (race_id, event_id, place, bib_number, unofficial_time) VALUES (?, ?, ?, ?, ?)",
-		ca.RaceID, ca.EventID, ca.Place, ca.BibNumber, ca.UnofficialTime)
+	if ca.EnteredAt <= 0 {
+		ca.EnteredAt = time.Now().UnixMilli()
+	}
+	_, err := r.db.Exec("INSERT OR REPLACE INTO chute_assignments (race_id, event_id, place, bib_number, unofficial_time, entered_at_unix_ms) VALUES (?, ?, ?, ?, ?, ?)",
+		ca.RaceID, ca.EventID, ca.Place, ca.BibNumber, ca.UnofficialTime, ca.EnteredAt)
 	return err
 }
 
@@ -167,23 +171,24 @@ func (r *TimingRepository) ShiftPlacementsByEvent(raceID int, eventID int, start
 	}
 	defer tx.Rollback()
 
-	rows, err := tx.Query("SELECT place, bib_number, unofficial_time FROM chute_assignments WHERE race_id = ? AND event_id = ? AND place >= ? ORDER BY place DESC", raceID, eventID, startPlace)
+	rows, err := tx.Query("SELECT place, bib_number, unofficial_time, entered_at_unix_ms FROM chute_assignments WHERE race_id = ? AND event_id = ? AND place >= ? ORDER BY place DESC", raceID, eventID, startPlace)
 	if delta < 0 {
-		rows, err = tx.Query("SELECT place, bib_number, unofficial_time FROM chute_assignments WHERE race_id = ? AND event_id = ? AND place >= ? ORDER BY place ASC", raceID, eventID, startPlace)
+		rows, err = tx.Query("SELECT place, bib_number, unofficial_time, entered_at_unix_ms FROM chute_assignments WHERE race_id = ? AND event_id = ? AND place >= ? ORDER BY place ASC", raceID, eventID, startPlace)
 	}
 	if err != nil {
 		return err
 	}
 
 	type entry struct {
-		p int
-		b string
-		t string
+		p  int
+		b  string
+		t  string
+		at int64
 	}
 	var entries []entry
 	for rows.Next() {
 		var e entry
-		rows.Scan(&e.p, &e.b, &e.t)
+		rows.Scan(&e.p, &e.b, &e.t, &e.at)
 		entries = append(entries, e)
 	}
 	rows.Close()
@@ -193,7 +198,7 @@ func (r *TimingRepository) ShiftPlacementsByEvent(raceID int, eventID int, start
 		if err != nil {
 			return err
 		}
-		_, err = tx.Exec("INSERT INTO chute_assignments (race_id, event_id, place, bib_number, unofficial_time) VALUES (?, ?, ?, ?, ?)", raceID, eventID, e.p+delta, e.b, e.t)
+		_, err = tx.Exec("INSERT INTO chute_assignments (race_id, event_id, place, bib_number, unofficial_time, entered_at_unix_ms) VALUES (?, ?, ?, ?, ?, ?)", raceID, eventID, e.p+delta, e.b, e.t, e.at)
 		if err != nil {
 			return err
 		}
@@ -217,7 +222,7 @@ func (r *TimingRepository) listPlacementsWhere(where string, args ...interface{}
 	if err := r.checkDB(); err != nil {
 		return nil, err
 	}
-	query := "SELECT race_id, event_id, place, bib_number, unofficial_time FROM chute_assignments " + where + " ORDER BY place ASC"
+	query := "SELECT race_id, event_id, place, bib_number, unofficial_time, entered_at_unix_ms FROM chute_assignments " + where + " ORDER BY place ASC"
 	rows, err := r.db.Query(query, args...)
 	if err != nil {
 		return nil, err
@@ -226,7 +231,7 @@ func (r *TimingRepository) listPlacementsWhere(where string, args ...interface{}
 	var assignments []models.ChuteAssignment
 	for rows.Next() {
 		var ca models.ChuteAssignment
-		if err := rows.Scan(&ca.RaceID, &ca.EventID, &ca.Place, &ca.BibNumber, &ca.UnofficialTime); err != nil {
+		if err := rows.Scan(&ca.RaceID, &ca.EventID, &ca.Place, &ca.BibNumber, &ca.UnofficialTime, &ca.EnteredAt); err != nil {
 			return nil, err
 		}
 		assignments = append(assignments, ca)
