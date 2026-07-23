@@ -144,7 +144,7 @@ export function CompanionApp() {
   const [armed,setArmed]=useState(false);
   const [finishPressed,setFinishPressed]=useState(false);
   const [tick,setTick]=useState(Date.now());
-  const armTimer=useRef<number>();
+  const armTimer=useRef<number|undefined>(undefined);
   const finishGesture=useRef<{pointerID:number;x:number;y:number;clientAt:number}|null>(null);
   const flushing=useRef(false);
   const flushRequested=useRef(false);
