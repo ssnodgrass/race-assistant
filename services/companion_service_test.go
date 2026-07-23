@@ -329,6 +329,57 @@ func TestCompanionIdempotencyWarningsPlaceholdersAndUndo(t *testing.T) {
 	}
 }
 
+func TestCompanionStateTracksLatestBibFromPhoneAndLaptop(t *testing.T) {
+	service, timing, race, event, _ := setupCompanionTest(t)
+	session, err := service.StartSession(race.ID, event.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err = timing.AssignBibToPlaceForEvent(race.ID, event.ID, 1, "101"); err != nil {
+		t.Fatal(err)
+	}
+	state, err := service.GetState(session.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if state.LastBib == nil || state.LastBib.Place != 1 || state.LastBib.BibNumber != "101" ||
+		state.LastBib.ParticipantName != "Five One" || state.LastBib.RequestID != "" {
+		t.Fatalf("laptop placement was not reflected in companion state: %+v", state.LastBib)
+	}
+
+	token := pairCompanion(t, service, session.ID, "Bib")
+	if err = service.AcquireRole(token, "bib"); err != nil {
+		t.Fatal(err)
+	}
+	acks, err := service.Submit(token, []models.CompanionEntry{
+		companionEntry("phone-bib", "bib", "102", time.Now().UnixMilli()),
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	state, err = service.GetState(session.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if state.LastBib == nil || state.LastBib.Place != acks[0].Place ||
+		state.LastBib.BibNumber != "102" || state.LastBib.RequestID != "phone-bib" {
+		t.Fatalf("phone placement was not reflected in companion state: %+v", state.LastBib)
+	}
+
+	time.Sleep(2 * time.Millisecond)
+	if err = timing.AssignBibToPlaceForEvent(race.ID, event.ID, 1, "201"); err != nil {
+		t.Fatal(err)
+	}
+	state, err = service.GetState(session.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if state.LastBib == nil || state.LastBib.Place != 1 || state.LastBib.BibNumber != "201" ||
+		state.LastBib.RequestID != "" {
+		t.Fatalf("newer laptop edit at a lower place was not latest: %+v", state.LastBib)
+	}
+}
+
 func TestCompanionGenericPlaceholderBalancesChuteWithoutResult(t *testing.T) {
 	service, timing, race, event, _ := setupCompanionTest(t)
 	session, err := service.StartSession(race.ID, event.ID)

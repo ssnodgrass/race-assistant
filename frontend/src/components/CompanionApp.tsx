@@ -10,7 +10,8 @@ type Role = 'start' | 'timer' | 'bib';
 type Entry = { request_id: string; session_id:string; kind: 'start'|'time'|'bib'; captured_at_unix_ms: number; client_captured_at_unix_ms:number; calibration_at_unix_ms:number; calibration_offset_ms:number; bib_number: string; uncertainty_ms: number };
 type Ack = { request_id:string; status:string; place:number; elapsed:string; bib_number:string; participant_name:string; event_name:string; warning:string };
 type DisplayAck = Ack & { kind:Entry['kind'] };
-type State = { session:{id:string}|null; race_name:string; event_name:string; race_start:string|null; time_count:number; bib_count:number; next_time_place:number; next_bib_place:number; devices:Array<{id:string;name:string;role:string}> };
+type LastBib = { request_id:string; place:number; bib_number:string; participant_name:string; event_name:string; entered_at_unix_ms:number };
+type State = { session:{id:string}|null; race_name:string; event_name:string; race_start:string|null; time_count:number; bib_count:number; next_time_place:number; next_bib_place:number; last_bib:LastBib|null; devices:Array<{id:string;name:string;role:string}> };
 
 const DB_NAME = 'race-assistant-companion';
 const STORE = 'outbox';
@@ -275,8 +276,15 @@ export function CompanionApp() {
   const clearQueuedEntries=async(scope:'older'|'all')=>{const sessionID=stateRef.current?.session?.id;const targets=queuedEntries.filter(entry=>scope==='all'||entry.session_id!==sessionID);if(!targets.length||!window.confirm(`Permanently delete ${targets.length} unsent ${targets.length===1?'entry':'entries'} from this phone?`))return;for(const entry of targets)await deleteEntry(entry.request_id);if(targets.some(entry=>entry.kind==='start'))startCapturePending.current=false;setMessage('LOCAL QUEUE CLEARED');await refreshPending()};
 
   const elapsed=useMemo(()=>state?.race_start?formatElapsedHundredths(tick-new Date(state.race_start).getTime()):'WAITING FOR START',[state?.race_start,tick]);
-  const visibleAck=lastAck&&((lastAck.kind==='time'?'timer':lastAck.kind)===active)?lastAck:null;
-  const visibleAckValue=visibleAck?.bib_number.startsWith('GP:')?'Excluded finish':visibleAck?.bib_number||(visibleAck?.elapsed?formatStoredElapsedHundredths(visibleAck.elapsed):'');
+  const latestBib=state?.last_bib||null;
+  const localVisibleAck=lastAck&&((lastAck.kind==='time'?'timer':lastAck.kind)===active)?lastAck:null;
+  const visibleAck=active==='bib'?latestBib:localVisibleAck;
+  const visibleElapsed=visibleAck&&'elapsed'in visibleAck?visibleAck.elapsed:'';
+  const visibleAckValue=visibleAck?.bib_number.startsWith('GP:')?'Excluded finish':visibleAck?.bib_number||(visibleElapsed?formatStoredElapsedHundredths(visibleElapsed):'');
+  const visibleWarning=visibleAck&&'warning'in visibleAck?visibleAck.warning:'';
+  const canUndo=Boolean(lastAck&&(active==='bib'
+    ? lastAck.kind==='bib'&&latestBib?.request_id===lastAck.request_id
+    : visibleAck===lastAck));
   const heldRolePending=heldRole?hasPendingForRole(heldRole):false;
   const startQueuePending=hasPendingForRole('start');
   const heldRoleLabel=heldRole?roleLabel(heldRole):'';
@@ -322,8 +330,8 @@ export function CompanionApp() {
         <div className="keypad">{['1','2','3','4','5','6','7','8','9','ABC','0','⌫'].map(k=><button key={k} onClick={()=>k==='⌫'?setBib(v=>v.slice(0,-1)):k==='ABC'?document.querySelector<HTMLInputElement>('.bib-display')?.focus():setBib(v=>v+k)}>{k}</button>)}</div>
         <div className="bib-actions"><button onClick={()=>submitBib()} disabled={!bib}>Submit Bib</button><button className="placeholder" onClick={()=>capture('bib','?')}>No Bib / Numbered Stick</button><button style={{background:'#596273',gridColumn:'1 / -1'}} onClick={()=>capture('bib','__GENERIC__')}>Extra Finish / Exclude from Results</button></div>
       </section>}
-      {visibleAck&&<div className="last-ack" style={{width:'100%',flexShrink:0}}><strong>#{visibleAck.place} {visibleAckValue}</strong><span>{visibleAck.participant_name} {visibleAck.event_name}</span><button onClick={undo}>Undo last</button></div>}
+      {visibleAck&&<div className="last-ack" style={{width:'100%',flexShrink:0}}><strong>#{visibleAck.place} {visibleAckValue}</strong><span>{visibleAck.participant_name} {visibleAck.event_name}</span>{canUndo&&<button onClick={undo}>Undo last</button>}</div>}
     </main>
-    <footer style={{flexShrink:0,paddingBottom:'max(16px, env(safe-area-inset-bottom))'}}><div className={`companion-message ${visibleAck?.warning?'warning':''}`}>{message||'READY'}</div>{pending+orphaned>0&&<div style={{display:'flex',alignItems:'center',justifyContent:'space-between',gap:8,marginTop:8,padding:'8px 10px',border:'1px solid #a66030',borderRadius:8,color:'#ffad42'}}><span>{pending} current · {orphaned} older queued</span><div style={{display:'flex',gap:6}}>{pending>0&&online&&<button style={{background:'#277a42',padding:'8px 12px'}} onClick={()=>void flush()}>Sync now</button>}<button style={{background:'#526173',padding:'8px 12px'}} onClick={()=>setQueueOpen(true)}>Review</button></div></div>}{heldRole&&!(active==='start'&&heldRole==='start')&&<button className="release" style={{display:'inline-flex'}} disabled={heldRolePending} onClick={release}>{heldRolePending?`${heldRoleLabel} Queue Pending — Sync Before Release`:`Release ${heldRoleLabel} Role`}</button>}<button style={{width:'100%',marginTop:8,padding:9,background:'transparent',border:'1px solid #485363',color:'#b8c3d1'}} onClick={()=>void leaveRace()}>{pending>0?'Sync queue before changing race':online?'Leave race / pair again':'Reconnect to change race'}</button></footer>
+    <footer style={{flexShrink:0,paddingBottom:'max(16px, env(safe-area-inset-bottom))'}}><div className={`companion-message ${visibleWarning?'warning':''}`}>{message||'READY'}</div>{pending+orphaned>0&&<div style={{display:'flex',alignItems:'center',justifyContent:'space-between',gap:8,marginTop:8,padding:'8px 10px',border:'1px solid #a66030',borderRadius:8,color:'#ffad42'}}><span>{pending} current · {orphaned} older queued</span><div style={{display:'flex',gap:6}}>{pending>0&&online&&<button style={{background:'#277a42',padding:'8px 12px'}} onClick={()=>void flush()}>Sync now</button>}<button style={{background:'#526173',padding:'8px 12px'}} onClick={()=>setQueueOpen(true)}>Review</button></div></div>}{heldRole&&!(active==='start'&&heldRole==='start')&&<button className="release" style={{display:'inline-flex'}} disabled={heldRolePending} onClick={release}>{heldRolePending?`${heldRoleLabel} Queue Pending — Sync Before Release`:`Release ${heldRoleLabel} Role`}</button>}<button style={{width:'100%',marginTop:8,padding:9,background:'transparent',border:'1px solid #485363',color:'#b8c3d1'}} onClick={()=>void leaveRace()}>{pending>0?'Sync queue before changing race':online?'Leave race / pair again':'Reconnect to change race'}</button></footer>
   </div>;
 }

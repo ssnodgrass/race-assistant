@@ -87,6 +87,7 @@ type ChuteAssignment struct {
 	Place          int    `json:"place"`
 	BibNumber      string `json:"bib_number"`
 	UnofficialTime string `json:"unofficial_time"`
+	EnteredAt      int64  `json:"entered_at_unix_ms"`
 }
 
 type CompanionSession struct {
@@ -116,7 +117,17 @@ type CompanionState struct {
 	BibCount      int               `json:"bib_count"`
 	NextTimePlace int               `json:"next_time_place"`
 	NextBibPlace  int               `json:"next_bib_place"`
+	LastBib       *CompanionLastBib `json:"last_bib"`
 	DuplicateBibs []string          `json:"duplicate_bibs"`
+}
+
+type CompanionLastBib struct {
+	RequestID       string `json:"request_id"`
+	Place           int    `json:"place"`
+	BibNumber       string `json:"bib_number"`
+	ParticipantName string `json:"participant_name"`
+	EventName       string `json:"event_name"`
+	EnteredAt       int64  `json:"entered_at_unix_ms"`
 }
 
 type CompanionPairing struct {
