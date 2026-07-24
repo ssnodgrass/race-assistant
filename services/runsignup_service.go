@@ -113,17 +113,21 @@ func (s *RunSignUpService) GetParticipants(rsuRaceID string, rsuEventID string, 
 	if err := s.checkRSUError(body); err != nil {
 		return nil, err
 	}
-	
+
 	var apiResponse []models.RSUEventParticipants
 	if err := json.Unmarshal(body, &apiResponse); err != nil {
 		return nil, fmt.Errorf("failed to parse participant JSON: %w", err)
 	}
 
+	return participantsFromRSUResponse(apiResponse), nil
+}
+
+func participantsFromRSUResponse(apiResponse []models.RSUEventParticipants) []models.Participant {
 	var results []models.Participant
 	for _, group := range apiResponse {
 		for _, reg := range group.Participants {
 			user := reg.User
-			
+
 			var dobPtr *time.Time
 			if user.DOB != "" {
 				dob, err := time.Parse("2006-01-02", user.DOB)
@@ -131,10 +135,15 @@ func (s *RunSignUpService) GetParticipants(rsuRaceID string, rsuEventID string, 
 					dobPtr = &dob
 				}
 			}
-			
+
 			bib := ""
 			if reg.BibNum != nil {
 				bib = *reg.BibNum
+			}
+
+			shirtSize := ""
+			if reg.Giveaway != nil {
+				shirtSize = *reg.Giveaway
 			}
 
 			results = append(results, models.Participant{
@@ -144,9 +153,10 @@ func (s *RunSignUpService) GetParticipants(rsuRaceID string, rsuEventID string, 
 				Gender:       user.Gender,
 				DOB:          dobPtr,
 				AgeOnRaceDay: reg.Age,
+				ShirtSize:    shirtSize,
 			})
 		}
 	}
 
-	return results, nil
+	return results
 }
