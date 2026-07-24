@@ -181,6 +181,7 @@ type CompanionCheckInParticipant struct {
 	LastName  string `json:"last_name"`
 	Gender    string `json:"gender"`
 	Age       int    `json:"age"`
+	ShirtSize string `json:"shirt_size"`
 	CheckedIn bool   `json:"checked_in"`
 }
 

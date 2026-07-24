@@ -579,6 +579,41 @@ func TestCompanionCheckInAssignsBibAndIsIdempotent(t *testing.T) {
 	}
 }
 
+func TestCompanionCheckInRosterIncludesShirtSizeWhenAvailable(t *testing.T) {
+	service, _, race, _, _ := setupCompanionTest(t)
+	var shirtSizeColumns int
+	if err := service.db.QueryRow(`SELECT COUNT(*) FROM pragma_table_info('participants') WHERE name='shirt_size'`).Scan(&shirtSizeColumns); err != nil {
+		t.Fatal(err)
+	}
+	if shirtSizeColumns == 0 {
+		if _, err := service.db.Exec(`ALTER TABLE participants ADD COLUMN shirt_size TEXT NOT NULL DEFAULT ''`); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if _, err := service.db.Exec(`UPDATE participants SET shirt_size='Adult M' WHERE bib_number='101'`); err != nil {
+		t.Fatal(err)
+	}
+
+	session, err := service.StartSession(race.ID, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	token := pairCompanion(t, service, session.ID, "Shirt-size iPad")
+	roster, err := service.CheckInRoster(token)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, participant := range roster.Participants {
+		if participant.BibNumber == "101" {
+			if participant.ShirtSize != "Adult M" {
+				t.Fatalf("shirt size = %q, want %q", participant.ShirtSize, "Adult M")
+			}
+			return
+		}
+	}
+	t.Fatal("participant 101 not found in check-in roster")
+}
+
 func TestCompanionCheckInRejectsDuplicateRaceBib(t *testing.T) {
 	service, _, race, _, _ := setupCompanionTest(t)
 	session, err := service.StartSession(race.ID, 0)

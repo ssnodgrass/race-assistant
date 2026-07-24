@@ -10,6 +10,7 @@ type CheckInParticipant = {
   last_name: string;
   gender: string;
   age: number;
+  shirt_size: string;
   checked_in: boolean;
 };
 
@@ -323,7 +324,7 @@ export function CheckInApp() {
               <div><span>Event</span><strong>{selected.event_name}</strong></div>
               <div><span>Age</span><strong>{selected.age}</strong></div>
               <div><span>Gender</span><strong>{selected.gender || '—'}</strong></div>
-              <div><span>Shirt</span><strong className="text-dim">Not tracked</strong></div>
+              <div><span>Shirt</span><strong className={selected.shirt_size ? '' : 'text-dim'}>{selected.shirt_size || 'Not provided'}</strong></div>
             </div>
             {selected.checked_in && <div className="checkin-already">✓ Already checked in{pendingParticipantIDs.has(selected.id) ? ' · pending sync' : ''}</div>}
             <label className="checkin-bib-label">BIB NUMBER<input inputMode="numeric" value={bib} onChange={event => setBib(event.target.value.replace(/\s/g, ''))} autoFocus /></label>

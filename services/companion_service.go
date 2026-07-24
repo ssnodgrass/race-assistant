@@ -310,10 +310,14 @@ func (s *CompanionService) checkInRosterLocked(id companionIdentity) (models.Com
 	if err := s.db.QueryRow("SELECT name FROM races WHERE id=?", id.Session.RaceID).Scan(&roster.RaceName); err != nil {
 		return roster, err
 	}
-	rows, err := s.db.Query(`SELECT p.id,p.event_id,COALESCE(e.name,''),p.bib_number,
-		p.first_name,p.last_name,p.gender,p.age_on_race_day,p.checked_in
+	shirtSizeSelect, err := s.checkInShirtSizeSelectLocked()
+	if err != nil {
+		return roster, err
+	}
+	rows, err := s.db.Query(fmt.Sprintf(`SELECT p.id,p.event_id,COALESCE(e.name,''),p.bib_number,
+		p.first_name,p.last_name,p.gender,p.age_on_race_day,%s,p.checked_in
 		FROM participants p LEFT JOIN events e ON e.id=p.event_id
-		WHERE p.race_id=? ORDER BY p.last_name,p.first_name,p.id`, id.Session.RaceID)
+		WHERE p.race_id=? ORDER BY p.last_name,p.first_name,p.id`, shirtSizeSelect), id.Session.RaceID)
 	if err != nil {
 		return roster, err
 	}
@@ -324,7 +328,7 @@ func (s *CompanionService) checkInRosterLocked(id companionIdentity) (models.Com
 		if err := rows.Scan(
 			&participant.ID, &participant.EventID, &participant.EventName, &participant.BibNumber,
 			&participant.FirstName, &participant.LastName, &participant.Gender, &participant.Age,
-			&participant.CheckedIn,
+			&participant.ShirtSize, &participant.CheckedIn,
 		); err != nil {
 			return roster, err
 		}
@@ -399,18 +403,34 @@ func (s *CompanionService) submitCheckInLocked(id companionIdentity, request mod
 
 func (s *CompanionService) checkInParticipantLocked(raceID, participantID int) (models.CompanionCheckInParticipant, error) {
 	var participant models.CompanionCheckInParticipant
-	err := s.db.QueryRow(`SELECT p.id,p.event_id,COALESCE(e.name,''),p.bib_number,
-		p.first_name,p.last_name,p.gender,p.age_on_race_day,p.checked_in
+	shirtSizeSelect, err := s.checkInShirtSizeSelectLocked()
+	if err != nil {
+		return participant, err
+	}
+	err = s.db.QueryRow(fmt.Sprintf(`SELECT p.id,p.event_id,COALESCE(e.name,''),p.bib_number,
+		p.first_name,p.last_name,p.gender,p.age_on_race_day,%s,p.checked_in
 		FROM participants p LEFT JOIN events e ON e.id=p.event_id
-		WHERE p.race_id=? AND p.id=?`, raceID, participantID).Scan(
+		WHERE p.race_id=? AND p.id=?`, shirtSizeSelect), raceID, participantID).Scan(
 		&participant.ID, &participant.EventID, &participant.EventName, &participant.BibNumber,
 		&participant.FirstName, &participant.LastName, &participant.Gender, &participant.Age,
-		&participant.CheckedIn,
+		&participant.ShirtSize, &participant.CheckedIn,
 	)
 	if err == sql.ErrNoRows {
 		return participant, fmt.Errorf("participant not found")
 	}
 	return participant, err
+}
+
+func (s *CompanionService) checkInShirtSizeSelectLocked() (string, error) {
+	var count int
+	err := s.db.QueryRow(`SELECT COUNT(*) FROM pragma_table_info('participants') WHERE name='shirt_size'`).Scan(&count)
+	if err != nil {
+		return "", err
+	}
+	if count == 0 {
+		return "''", nil
+	}
+	return "COALESCE(p.shirt_size,'')", nil
 }
 
 func (s *CompanionService) GetState(sessionID string) (models.CompanionState, error) {
