@@ -1,5 +1,4 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type PointerEvent as ReactPointerEvent } from 'react';
-import jsQR from 'jsqr';
 import { Calibration, correctCapture, formatElapsedHundredths, formatStoredElapsedHundredths, selectCalibration } from '../utils/companionClock';
 import { isIntentionalTap } from '../utils/companionGesture';
 import { pairingCredentialFrom } from '../utils/companionPairing';
@@ -35,6 +34,7 @@ function PairingScanner({onScan,onClose}:{onScan:(value:string)=>void;onClose:()
     let frame=0;
     let finished=false;
     let lastScan=0;
+    let decodeQR:typeof import('jsqr')['default']|undefined;
     const stop=()=>{finished=true;if(frame)cancelAnimationFrame(frame);stream?.getTracks().forEach(track=>track.stop())};
     const scan=(timestamp:number)=>{
       if(finished)return;
@@ -49,7 +49,7 @@ function PairingScanner({onScan,onClose}:{onScan:(value:string)=>void;onClose:()
         if(context){
           context.drawImage(video,0,0,canvas.width,canvas.height);
           const pixels=context.getImageData(0,0,canvas.width,canvas.height);
-          const result=jsQR(pixels.data,pixels.width,pixels.height,{inversionAttempts:'dontInvert'});
+          const result=decodeQR?.(pixels.data,pixels.width,pixels.height,{inversionAttempts:'dontInvert'});
           if(result){
             try{onScan(result.data);stop();return}catch(e){setError(String(e).replace(/^Error:\s*/,''))}
           }
@@ -60,6 +60,7 @@ function PairingScanner({onScan,onClose}:{onScan:(value:string)=>void;onClose:()
     const start=async()=>{
       if(!navigator.mediaDevices?.getUserMedia){setError('Camera scanning is not supported here. Enter the pairing code instead.');return}
       try{
+        decodeQR=(await import('jsqr')).default;
         stream=await navigator.mediaDevices.getUserMedia({audio:false,video:{facingMode:{ideal:'environment'},width:{ideal:1280},height:{ideal:720}}});
         if(finished){stream.getTracks().forEach(track=>track.stop());return}
         const video=videoRef.current;
@@ -144,7 +145,7 @@ export function CompanionApp() {
   const [armed,setArmed]=useState(false);
   const [finishPressed,setFinishPressed]=useState(false);
   const [tick,setTick]=useState(Date.now());
-  const armTimer=useRef<number>();
+  const armTimer=useRef<number|undefined>(undefined);
   const finishGesture=useRef<{pointerID:number;x:number;y:number;clientAt:number}|null>(null);
   const flushing=useRef(false);
   const flushRequested=useRef(false);
