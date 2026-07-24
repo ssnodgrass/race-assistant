@@ -473,7 +473,7 @@ func (s *ReportingService) GenerateCheckInWorksheetCSV(raceID int, outputPath st
 	writer := csv.NewWriter(file)
 	defer writer.Flush()
 
-	writer.Write([]string{"Event", "Last Name", "First Name", "Bib", "Gender", "Age", "Checked In", "Notes"})
+	writer.Write([]string{"Event", "Last Name", "First Name", "Bib", "Gender", "Age", "Shirt Size", "Checked In", "Notes"})
 	for _, participant := range participants {
 		checkedIn := ""
 		if participant.CheckedIn {
@@ -486,13 +486,14 @@ func (s *ReportingService) GenerateCheckInWorksheetCSV(raceID int, outputPath st
 			participant.BibNumber,
 			participant.Gender,
 			fmt.Sprintf("%d", participant.AgeOnRaceDay),
+			participant.ShirtSize,
 			checkedIn,
 			"",
 		})
 	}
 
 	for i := 0; i < 25; i++ {
-		writer.Write([]string{"", "", "", "", "", "", "", ""})
+		writer.Write([]string{"", "", "", "", "", "", "", "", ""})
 	}
 
 	return nil

@@ -174,6 +174,9 @@ func (s *ParticipantService) ImportParticipants(
 		if idx, ok := mapping["bib"]; ok && idx >= 0 && idx < len(record) {
 			p.BibNumber = strings.TrimSpace(record[idx])
 		}
+		if idx, ok := mapping["shirt_size"]; ok && idx >= 0 && idx < len(record) {
+			p.ShirtSize = strings.TrimSpace(record[idx])
+		}
 		if idx, ok := mapping["event"]; ok && idx >= 0 && idx < len(record) {
 			csvEventName := strings.ToLower(strings.TrimSpace(record[idx]))
 			for name, id := range eventMap {
@@ -208,9 +211,9 @@ func (s *ParticipantService) ImportParticipants(
 		}
 
 		// Use manual exec on tx for performance
-		_, err = tx.Exec(`INSERT INTO participants (race_id, event_id, bib_number, first_name, last_name, gender, dob, age_on_race_day, checked_in) 
-			VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-			p.RaceID, p.EventID, p.BibNumber, p.FirstName, p.LastName, p.Gender, p.DOB, p.AgeOnRaceDay, p.CheckedIn)
+		_, err = tx.Exec(`INSERT INTO participants (race_id, event_id, bib_number, first_name, last_name, gender, dob, age_on_race_day, shirt_size, checked_in)
+			VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+			p.RaceID, p.EventID, p.BibNumber, p.FirstName, p.LastName, p.Gender, p.DOB, p.AgeOnRaceDay, p.ShirtSize, p.CheckedIn)
 
 		if err == nil {
 			count++

@@ -34,9 +34,9 @@ func (r *ParticipantRepository) Create(p *models.Participant) error {
 	if err := r.checkDB(); err != nil {
 		return err
 	}
-	res, err := r.db.Exec(`INSERT INTO participants (race_id, event_id, bib_number, first_name, last_name, gender, dob, age_on_race_day, checked_in) 
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-		p.RaceID, p.EventID, p.BibNumber, p.FirstName, p.LastName, p.Gender, p.DOB, p.AgeOnRaceDay, p.CheckedIn)
+	res, err := r.db.Exec(`INSERT INTO participants (race_id, event_id, bib_number, first_name, last_name, gender, dob, age_on_race_day, shirt_size, checked_in)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+		p.RaceID, p.EventID, p.BibNumber, p.FirstName, p.LastName, p.Gender, p.DOB, p.AgeOnRaceDay, p.ShirtSize, p.CheckedIn)
 	if err != nil {
 		return err
 	}
@@ -50,9 +50,9 @@ func (r *ParticipantRepository) GetByID(id int) (*models.Participant, error) {
 		return nil, err
 	}
 	var p models.Participant
-	err := r.db.QueryRow(`SELECT id, race_id, event_id, bib_number, first_name, last_name, gender, dob, age_on_race_day, checked_in 
+	err := r.db.QueryRow(`SELECT id, race_id, event_id, bib_number, first_name, last_name, gender, dob, age_on_race_day, shirt_size, checked_in
 		FROM participants WHERE id = ?`, id).
-		Scan(&p.ID, &p.RaceID, &p.EventID, &p.BibNumber, &p.FirstName, &p.LastName, &p.Gender, &p.DOB, &p.AgeOnRaceDay, &p.CheckedIn)
+		Scan(&p.ID, &p.RaceID, &p.EventID, &p.BibNumber, &p.FirstName, &p.LastName, &p.Gender, &p.DOB, &p.AgeOnRaceDay, &p.ShirtSize, &p.CheckedIn)
 	if err != nil {
 		return nil, err
 	}
@@ -63,7 +63,7 @@ func (r *ParticipantRepository) ListByEvent(eventID int) ([]models.Participant, 
 	if err := r.checkDB(); err != nil {
 		return nil, err
 	}
-	rows, err := r.db.Query("SELECT id, race_id, event_id, bib_number, first_name, last_name, gender, dob, age_on_race_day, checked_in FROM participants WHERE event_id = ?", eventID)
+	rows, err := r.db.Query("SELECT id, race_id, event_id, bib_number, first_name, last_name, gender, dob, age_on_race_day, shirt_size, checked_in FROM participants WHERE event_id = ?", eventID)
 	if err != nil {
 		return nil, err
 	}
@@ -75,7 +75,7 @@ func (r *ParticipantRepository) ListByRace(raceID int) ([]models.Participant, er
 	if err := r.checkDB(); err != nil {
 		return nil, err
 	}
-	rows, err := r.db.Query("SELECT id, race_id, event_id, bib_number, first_name, last_name, gender, dob, age_on_race_day, checked_in FROM participants WHERE race_id = ?", raceID)
+	rows, err := r.db.Query("SELECT id, race_id, event_id, bib_number, first_name, last_name, gender, dob, age_on_race_day, shirt_size, checked_in FROM participants WHERE race_id = ?", raceID)
 	if err != nil {
 		return nil, err
 	}
@@ -87,7 +87,7 @@ func (r *ParticipantRepository) scanParticipants(rows *sql.Rows) ([]models.Parti
 	var participants []models.Participant
 	for rows.Next() {
 		var p models.Participant
-		if err := rows.Scan(&p.ID, &p.RaceID, &p.EventID, &p.BibNumber, &p.FirstName, &p.LastName, &p.Gender, &p.DOB, &p.AgeOnRaceDay, &p.CheckedIn); err != nil {
+		if err := rows.Scan(&p.ID, &p.RaceID, &p.EventID, &p.BibNumber, &p.FirstName, &p.LastName, &p.Gender, &p.DOB, &p.AgeOnRaceDay, &p.ShirtSize, &p.CheckedIn); err != nil {
 			return nil, err
 		}
 		participants = append(participants, p)
@@ -99,9 +99,9 @@ func (r *ParticipantRepository) Update(p *models.Participant) error {
 	if err := r.checkDB(); err != nil {
 		return err
 	}
-	_, err := r.db.Exec(`UPDATE participants SET event_id=?, bib_number=?, first_name=?, last_name=?, gender=?, dob=?, age_on_race_day=?, checked_in=? 
+	_, err := r.db.Exec(`UPDATE participants SET event_id=?, bib_number=?, first_name=?, last_name=?, gender=?, dob=?, age_on_race_day=?, shirt_size=?, checked_in=?
 		WHERE id=?`,
-		p.EventID, p.BibNumber, p.FirstName, p.LastName, p.Gender, p.DOB, p.AgeOnRaceDay, p.CheckedIn, p.ID)
+		p.EventID, p.BibNumber, p.FirstName, p.LastName, p.Gender, p.DOB, p.AgeOnRaceDay, p.ShirtSize, p.CheckedIn, p.ID)
 	return err
 }
 

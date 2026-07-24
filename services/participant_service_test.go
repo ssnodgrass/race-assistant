@@ -145,7 +145,7 @@ func TestImportParticipantsReplaceExisting(t *testing.T) {
 
 	tempDir := t.TempDir()
 	filePath := filepath.Join(tempDir, "participants.csv")
-	csvContent := "First Name,Last Name,Gender,Age,Bib\nAlice,Smith,F,28,101\nBob,Jones,M,34,102\n"
+	csvContent := "First Name,Last Name,Gender,Age,Bib,Shirt Size\nAlice,Smith,F,28,101,Adult M\nBob,Jones,M,34,102,2XL\n"
 	if err := os.WriteFile(filePath, []byte(csvContent), 0o600); err != nil {
 		t.Fatalf("Write CSV failed: %v", err)
 	}
@@ -159,6 +159,7 @@ func TestImportParticipantsReplaceExisting(t *testing.T) {
 			"gender":     2,
 			"age":        3,
 			"bib":        4,
+			"shirt_size": 5,
 		},
 		0,
 		event.ID,
@@ -183,6 +184,12 @@ func TestImportParticipantsReplaceExisting(t *testing.T) {
 	for _, participant := range participants {
 		if participant.BibNumber == "999" {
 			t.Fatalf("found stale participant after replace import")
+		}
+		if participant.BibNumber == "101" && participant.ShirtSize != "Adult M" {
+			t.Fatalf("participant shirt size = %q, want %q", participant.ShirtSize, "Adult M")
+		}
+		if participant.BibNumber == "102" && participant.ShirtSize != "2XL" {
+			t.Fatalf("participant shirt size = %q, want %q", participant.ShirtSize, "2XL")
 		}
 	}
 }

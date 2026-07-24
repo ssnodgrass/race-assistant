@@ -1,0 +1,1 @@
+ALTER TABLE participants ADD COLUMN shirt_size TEXT NOT NULL DEFAULT '';
