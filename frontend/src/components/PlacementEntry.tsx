@@ -3,6 +3,7 @@ import { TimingService } from '../../bindings/github.com/ssnodgrass/race-assista
 import { Participant, Event as RaceEvent, ChuteAssignment, Race } from '../../bindings/github.com/ssnodgrass/race-assistant/models';
 import { formatStoredElapsedHundredths } from '../utils/companionClock';
 import { latestChangedPlacement } from '../utils/placementActivity';
+import { NonNegativeNumberInput } from './NonNegativeNumberInput';
 
 interface PlacementEntryProps {
   race: Race;
@@ -353,7 +354,7 @@ export const PlacementEntry: React.FC<PlacementEntryProps> = ({ race, participan
                         <div style={{ width: '120px' }}>
                             <label style={{ display: 'block', marginBottom: '8px', fontWeight: 600, fontSize: '0.85em', color: 'var(--text-dim)' }}>TARGET PLACE</label>
                             <div className="flex-row" style={{ gap: '4px' }}>
-                                <input type="number" value={place} onChange={e => selectPlace(e.target.value)} style={{ width: '100%' }} />
+                                <NonNegativeNumberInput value={place} onValueChange={selectPlace} style={{ width: '100%' }} />
                                 {parseInt(place) !== nextPlace && ( <button type="button" onClick={resetTarget} style={{ padding: '8px', minWidth: '40px', backgroundColor: '#444' }}>↺</button> )}
                             </div>
                         </div>

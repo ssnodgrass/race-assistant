@@ -2,6 +2,7 @@ import React, { useState, useEffect, useRef } from 'react';
 import { TimingService } from '../../bindings/github.com/ssnodgrass/race-assistant/services';
 import { TimingPulse, Event as RaceEvent } from '../../bindings/github.com/ssnodgrass/race-assistant/models';
 import { formatStoredElapsedHundredths } from '../utils/companionClock';
+import { NonNegativeNumberInput } from './NonNegativeNumberInput';
 
 interface TimeEntryProps {
   raceID: number;
@@ -160,7 +161,7 @@ export const TimeEntry: React.FC<TimeEntryProps> = ({ raceID, events }) => {
         <form onSubmit={handleSubmit} style={{ display: 'flex', gap: '20px', alignItems: 'flex-end' }}>
             <div style={{ width: '120px' }}>
                 <label style={{ display: 'block', marginBottom: '8px', fontWeight: 600, fontSize: '0.85em', color: 'var(--text-dim)' }}>SEQUENCE #</label>
-                <input type="number" value={targetPlace} onChange={e => { formDirtyRef.current = true; setTargetPlace(e.target.value); }} style={{ width: '100%' }} />
+                <NonNegativeNumberInput value={targetPlace} onValueChange={value => { formDirtyRef.current = true; setTargetPlace(value); }} style={{ width: '100%' }} />
             </div>
             <div style={{ flex: 1 }}>
                 <label style={{ display: 'block', marginBottom: '8px', fontWeight: 600, fontSize: '0.85em', color: 'var(--text-dim)' }}>TIME (HH:MM:SS.cc)</label>
