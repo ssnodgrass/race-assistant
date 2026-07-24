@@ -20,6 +20,11 @@ describe('companion pairing credentials', () => {
     expect(pairingCredentialFrom(token, origin)).toBe(token);
   });
 
+  it('supports the separate check-in QR path when requested', () => {
+    expect(pairingCredentialFrom(`${origin}/checkin/#pair=${token}`, origin, '/checkin/')).toBe(token);
+    expect(() => pairingCredentialFrom(`${origin}/companion/#pair=${token}`, origin, '/checkin/')).toThrow(/different Race Assistant address/);
+  });
+
   it('rejects malformed codes and unrelated QR values', () => {
     expect(() => pairingCredentialFrom('12345', origin)).toThrow(/not a Race Assistant pairing code/);
     expect(() => pairingCredentialFrom(`${origin}/companion/#pair=short`, origin)).toThrow(/not a current pairing QR/);

@@ -36,14 +36,21 @@ type companionIdentity struct {
 }
 
 type CompanionService struct {
-	mu       sync.Mutex
-	db       *sql.DB
-	pairings map[string]pairingGrant
-	setup    models.CompanionSetup
+	mu                  sync.Mutex
+	db                  *sql.DB
+	pairings            map[string]pairingGrant
+	setup               models.CompanionSetup
+	participantsChanged func(int)
 }
 
 func NewCompanionService() *CompanionService {
 	return &CompanionService{pairings: make(map[string]pairingGrant)}
+}
+
+func NewCompanionServiceWithParticipantsChanged(handler func(int)) *CompanionService {
+	service := NewCompanionService()
+	service.participantsChanged = handler
+	return service
 }
 
 func (s *CompanionService) SetDB(db *sql.DB) {
@@ -310,14 +317,29 @@ func (s *CompanionService) checkInRosterLocked(id companionIdentity) (models.Com
 	if err := s.db.QueryRow("SELECT name FROM races WHERE id=?", id.Session.RaceID).Scan(&roster.RaceName); err != nil {
 		return roster, err
 	}
-	shirtSizeSelect, err := s.checkInShirtSizeSelectLocked()
+	eventRows, err := s.db.Query(`SELECT id,name FROM events WHERE race_id=? ORDER BY name,id`, id.Session.RaceID)
 	if err != nil {
 		return roster, err
 	}
-	rows, err := s.db.Query(fmt.Sprintf(`SELECT p.id,p.event_id,COALESCE(e.name,''),p.bib_number,
-		p.first_name,p.last_name,p.gender,p.age_on_race_day,%s,p.checked_in
+	roster.Events = make([]models.CompanionCheckInEvent, 0)
+	for eventRows.Next() {
+		var event models.CompanionCheckInEvent
+		if err := eventRows.Scan(&event.ID, &event.Name); err != nil {
+			eventRows.Close()
+			return roster, err
+		}
+		roster.Events = append(roster.Events, event)
+	}
+	if err := eventRows.Err(); err != nil {
+		eventRows.Close()
+		return roster, err
+	}
+	eventRows.Close()
+
+	rows, err := s.db.Query(`SELECT p.id,p.event_id,COALESCE(e.name,''),p.bib_number,
+		p.first_name,p.last_name,p.gender,p.age_on_race_day,COALESCE(p.shirt_size,''),p.checked_in
 		FROM participants p LEFT JOIN events e ON e.id=p.event_id
-		WHERE p.race_id=? ORDER BY p.last_name,p.first_name,p.id`, shirtSizeSelect), id.Session.RaceID)
+		WHERE p.race_id=? ORDER BY p.last_name,p.first_name,p.id`, id.Session.RaceID)
 	if err != nil {
 		return roster, err
 	}
@@ -339,12 +361,18 @@ func (s *CompanionService) checkInRosterLocked(id companionIdentity) (models.Com
 
 func (s *CompanionService) SubmitCheckIn(token string, request models.CompanionCheckInRequest) (models.CompanionCheckInAck, error) {
 	s.mu.Lock()
-	defer s.mu.Unlock()
 	id, err := s.authenticateLocked(token)
 	if err != nil {
+		s.mu.Unlock()
 		return models.CompanionCheckInAck{}, err
 	}
-	return s.submitCheckInLocked(id, request)
+	ack, err := s.submitCheckInLocked(id, request)
+	handler := s.participantsChanged
+	s.mu.Unlock()
+	if err == nil && ack.Status == "accepted" && handler != nil {
+		handler(id.Session.RaceID)
+	}
+	return ack, err
 }
 
 func (s *CompanionService) submitCheckInLocked(id companionIdentity, request models.CompanionCheckInRequest) (models.CompanionCheckInAck, error) {
@@ -386,8 +414,41 @@ func (s *CompanionService) submitCheckInLocked(id companionIdentity, request mod
 	if participantRaceID != id.Session.RaceID {
 		return models.CompanionCheckInAck{}, fmt.Errorf("participant does not belong to this race")
 	}
-	if _, err := tx.Exec("UPDATE participants SET bib_number=?,checked_in=1 WHERE id=?", bib, request.ParticipantID); err != nil {
-		return models.CompanionCheckInAck{}, err
+	if request.Participant == nil {
+		if _, err := tx.Exec("UPDATE participants SET bib_number=?,checked_in=1 WHERE id=?", bib, request.ParticipantID); err != nil {
+			return models.CompanionCheckInAck{}, err
+		}
+	} else {
+		update := *request.Participant
+		update.FirstName = strings.TrimSpace(update.FirstName)
+		update.LastName = strings.TrimSpace(update.LastName)
+		update.Gender = strings.ToUpper(strings.TrimSpace(update.Gender))
+		update.ShirtSize = strings.TrimSpace(update.ShirtSize)
+		if update.EventID <= 0 {
+			return models.CompanionCheckInAck{}, fmt.Errorf("event is required")
+		}
+		if update.FirstName == "" || update.LastName == "" {
+			return models.CompanionCheckInAck{}, fmt.Errorf("first and last name are required")
+		}
+		if update.Gender != "M" && update.Gender != "F" && update.Gender != "N/A" {
+			return models.CompanionCheckInAck{}, fmt.Errorf("gender must be M, F, or N/A")
+		}
+		if update.Age < 0 || update.Age > 130 {
+			return models.CompanionCheckInAck{}, fmt.Errorf("age must be between 0 and 130")
+		}
+		var eventExists int
+		if err := tx.QueryRow("SELECT COUNT(*) FROM events WHERE id=? AND race_id=?", update.EventID, id.Session.RaceID).Scan(&eventExists); err != nil {
+			return models.CompanionCheckInAck{}, err
+		}
+		if eventExists == 0 {
+			return models.CompanionCheckInAck{}, fmt.Errorf("event does not belong to this race")
+		}
+		if _, err := tx.Exec(`UPDATE participants SET event_id=?,bib_number=?,first_name=?,last_name=?,
+			gender=?,age_on_race_day=?,shirt_size=?,checked_in=1 WHERE id=?`,
+			update.EventID, bib, update.FirstName, update.LastName, update.Gender, update.Age,
+			update.ShirtSize, request.ParticipantID); err != nil {
+			return models.CompanionCheckInAck{}, err
+		}
 	}
 	if _, err := tx.Exec(`INSERT INTO companion_checkins
 		(request_id,session_id,device_id,participant_id,bib_number,captured_at_unix_ms,accepted_at_unix_ms)
@@ -403,14 +464,10 @@ func (s *CompanionService) submitCheckInLocked(id companionIdentity, request mod
 
 func (s *CompanionService) checkInParticipantLocked(raceID, participantID int) (models.CompanionCheckInParticipant, error) {
 	var participant models.CompanionCheckInParticipant
-	shirtSizeSelect, err := s.checkInShirtSizeSelectLocked()
-	if err != nil {
-		return participant, err
-	}
-	err = s.db.QueryRow(fmt.Sprintf(`SELECT p.id,p.event_id,COALESCE(e.name,''),p.bib_number,
-		p.first_name,p.last_name,p.gender,p.age_on_race_day,%s,p.checked_in
+	err := s.db.QueryRow(`SELECT p.id,p.event_id,COALESCE(e.name,''),p.bib_number,
+		p.first_name,p.last_name,p.gender,p.age_on_race_day,COALESCE(p.shirt_size,''),p.checked_in
 		FROM participants p LEFT JOIN events e ON e.id=p.event_id
-		WHERE p.race_id=? AND p.id=?`, shirtSizeSelect), raceID, participantID).Scan(
+		WHERE p.race_id=? AND p.id=?`, raceID, participantID).Scan(
 		&participant.ID, &participant.EventID, &participant.EventName, &participant.BibNumber,
 		&participant.FirstName, &participant.LastName, &participant.Gender, &participant.Age,
 		&participant.ShirtSize, &participant.CheckedIn,
@@ -419,18 +476,6 @@ func (s *CompanionService) checkInParticipantLocked(raceID, participantID int) (
 		return participant, fmt.Errorf("participant not found")
 	}
 	return participant, err
-}
-
-func (s *CompanionService) checkInShirtSizeSelectLocked() (string, error) {
-	var count int
-	err := s.db.QueryRow(`SELECT COUNT(*) FROM pragma_table_info('participants') WHERE name='shirt_size'`).Scan(&count)
-	if err != nil {
-		return "", err
-	}
-	if count == 0 {
-		return "''", nil
-	}
-	return "COALESCE(p.shirt_size,'')", nil
 }
 
 func (s *CompanionService) GetState(sessionID string) (models.CompanionState, error) {

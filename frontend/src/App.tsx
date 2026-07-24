@@ -52,7 +52,7 @@ function App() {
   }, [selectedRace]);
 
   const checkStatus = () => {
-    if (isCompanion) return;
+    if (isCompanion || isCheckIn) return;
     const isWeb = isBrowserMode;
     const statusCall = isWeb 
         ? fetch("/api/status").then(r => r.json())
@@ -65,6 +65,12 @@ function App() {
         if (path) {
             const isNewPath = path !== dbPath;
             if (isNewPath) setDbPath(path);
+
+            if (!isWeb && selectedRaceRef.current) {
+                ParticipantService.ListParticipants(selectedRaceRef.current.id)
+                    .then(list => setParticipants(list || []))
+                    .catch(() => {});
+            }
             
             if (isNewPath || races.length === 0) {
                 loadRaces().then(list => {
@@ -101,7 +107,14 @@ function App() {
         const u2 = Events.On('db:closed', () => {
             setDbPath(''); setRaces([]); setSelectedRace(null); setView('list');
         });
-        unsubs = [u1, u2];
+        const u3 = Events.On('participants:changed', (event) => {
+            const raceID = Number(event.data);
+            if (selectedRaceRef.current?.id !== raceID) return;
+            ParticipantService.ListParticipants(raceID)
+                .then(list => setParticipants(list || []))
+                .catch(console.error);
+        });
+        unsubs = [u1, u2, u3];
     }
 
     return () => { unsubs.forEach(u => u()); clearInterval(heartbeat); };
