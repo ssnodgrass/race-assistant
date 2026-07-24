@@ -1,0 +1,10 @@
+{
+  "name": "Race Assistant Check-In",
+  "short_name": "Race Check-In",
+  "start_url": "/checkin/",
+  "scope": "/checkin/",
+  "display": "standalone",
+  "background_color": "#080b10",
+  "theme_color": "#10151d",
+  "icons": [{"src":"/companion-icon.svg","sizes":"any","type":"image/svg+xml","purpose":"any maskable"}]
+}

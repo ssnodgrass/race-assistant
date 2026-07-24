@@ -91,6 +91,7 @@ That means the timer can concentrate on the line while another volunteer handles
 The companion is an installable local web app—there is no separate app-store download. The laptop creates a private HTTPS service on the race network and displays the QR codes needed to trust and pair each phone.
 
 - Assign an exclusive **Start**, **Finish Timer**, or **Bib Chute** role to each phone.
+- Pair a separate **Pre-race Check-In** iPad to search the cached roster, assign bibs, and mark arrivals without internet access.
 - Capture the official start away from the laptop after calibrating on the race network.
 - Keep recording during short network interruptions; queued entries remain on the phone until acknowledged.
 - Review the local queue, retry synchronization, release roles, and pair the phone with another race session.

@@ -158,7 +158,13 @@ func main() {
 	stopwatchService := services.NewStopwatchService(timingRepo)
 	runSignUpService := services.NewRunSignUpService(nil)
 	settingsService := services.NewSettingsService(settingsRepo)
-	companionService := services.NewCompanionService()
+	participantChanges := make(chan int, 32)
+	companionService := services.NewCompanionServiceWithParticipantsChanged(func(raceID int) {
+		select {
+		case participantChanges <- raceID:
+		default:
+		}
+	})
 
 	dbService := &DatabaseService{
 		services: []serviceWithDB{
@@ -285,6 +291,11 @@ func main() {
 
 	dbService.app = app
 	stopwatchService.SetApp(app)
+	go func() {
+		for raceID := range participantChanges {
+			app.Event.Emit("participants:changed", raceID)
+		}
+	}()
 
 	menu := app.NewMenu()
 	fileMenu := menu.AddSubmenu("File")

@@ -422,25 +422,35 @@ func startCompanionHTTPS(frontendFS fs.FS, service *services.CompanionService, p
 	mux := http.NewServeMux()
 	files := http.FileServer(http.FS(frontendFS))
 	pairLimiter := newPairingAttemptLimiter(10, time.Minute)
-	mux.HandleFunc("/companion/", func(w http.ResponseWriter, r *http.Request) {
-		if r.URL.Path != "/companion/" {
-			files.ServeHTTP(w, r)
-			return
+	serveApp := func(root string) http.HandlerFunc {
+		return func(w http.ResponseWriter, r *http.Request) {
+			if r.URL.Path != root {
+				files.ServeHTTP(w, r)
+				return
+			}
+			f, err := frontendFS.Open("index.html")
+			if err != nil {
+				http.Error(w, "companion unavailable", 500)
+				return
+			}
+			defer f.Close()
+			w.Header().Set("Content-Type", "text/html; charset=utf-8")
+			_, _ = io.Copy(w, f)
 		}
-		f, err := frontendFS.Open("index.html")
-		if err != nil {
-			http.Error(w, "companion unavailable", 500)
-			return
-		}
-		defer f.Close()
-		w.Header().Set("Content-Type", "text/html; charset=utf-8")
-		_, _ = io.Copy(w, f)
-	})
+	}
+	mux.HandleFunc("/companion/", serveApp("/companion/"))
+	mux.HandleFunc("/checkin/", serveApp("/checkin/"))
 	mux.Handle("/assets/", files)
 	mux.Handle("/companion.webmanifest", files)
+	mux.Handle("/checkin.webmanifest", files)
 	mux.HandleFunc("/companion-sw.js", func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Cache-Control", "no-cache")
 		w.Header().Set("Service-Worker-Allowed", "/companion/")
+		files.ServeHTTP(w, r)
+	})
+	mux.HandleFunc("/checkin-sw.js", func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Cache-Control", "no-cache")
+		w.Header().Set("Service-Worker-Allowed", "/checkin/")
 		files.ServeHTTP(w, r)
 	})
 	mux.HandleFunc("/api/companion/pair", func(w http.ResponseWriter, r *http.Request) {
@@ -457,6 +467,7 @@ func startCompanionHTTPS(frontendFS fs.FS, service *services.CompanionService, p
 		var req struct {
 			Token string `json:"token"`
 			Name  string `json:"name"`
+			Mode  string `json:"mode"`
 		}
 		if json.NewDecoder(r.Body).Decode(&req) != nil {
 			http.Error(w, "invalid request", 400)
@@ -468,8 +479,41 @@ func startCompanionHTTPS(frontendFS fs.FS, service *services.CompanionService, p
 			return
 		}
 		pairLimiter.clear(clientKey)
-		http.SetCookie(w, &http.Cookie{Name: "race_companion", Value: token, Path: "/", Secure: true, HttpOnly: true, SameSite: http.SameSiteStrictMode, MaxAge: 86400})
+		cookieName := "race_companion"
+		if req.Mode == "checkin" {
+			cookieName = "race_checkin"
+		}
+		http.SetCookie(w, &http.Cookie{Name: cookieName, Value: token, Path: "/", Secure: true, HttpOnly: true, SameSite: http.SameSiteStrictMode, MaxAge: 86400})
 		writeJSON(w, state)
+	})
+	mux.HandleFunc("/api/companion/checkin/roster", func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodGet {
+			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+			return
+		}
+		roster, err := service.CheckInRoster(checkInCookie(r))
+		if err != nil {
+			writeCompanionError(w, err, http.StatusUnauthorized)
+			return
+		}
+		writeJSON(w, roster)
+	})
+	mux.HandleFunc("/api/companion/checkin", func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodPost {
+			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+			return
+		}
+		var request models.CompanionCheckInRequest
+		if json.NewDecoder(r.Body).Decode(&request) != nil {
+			http.Error(w, "invalid request", http.StatusBadRequest)
+			return
+		}
+		ack, err := service.SubmitCheckIn(checkInCookie(r), request)
+		if err != nil {
+			writeCompanionError(w, err, http.StatusConflict)
+			return
+		}
+		writeJSON(w, ack)
 	})
 	mux.HandleFunc("/api/companion/unpair", func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != http.MethodPost {
@@ -614,6 +658,14 @@ func startCompanionHTTPS(frontendFS fs.FS, service *services.CompanionService, p
 
 func companionCookie(r *http.Request) string {
 	c, err := r.Cookie("race_companion")
+	if err != nil {
+		return ""
+	}
+	return c.Value
+}
+
+func checkInCookie(r *http.Request) string {
+	c, err := r.Cookie("race_checkin")
 	if err != nil {
 		return ""
 	}
