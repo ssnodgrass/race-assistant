@@ -178,27 +178,35 @@ func main() {
 	frontendFS, _ := fs.Sub(assets, "frontend/dist")
 	companionIP := preferredLANIP()
 	companionPKI, companionPKIErr := ensureCompanionPKI(companionStableHostname, companionIP)
+	var companionCertificates *companionCertificateStore
+	if companionPKIErr == nil {
+		companionCertificates, companionPKIErr = newCompanionCertificateStore(companionPKI)
+	}
 	if companionPKIErr != nil {
 		log.Printf("Companion PKI error: %v", companionPKIErr)
 		companionService.ConfigureServer(models.CompanionSetup{ServerError: companionPKIErr.Error()})
 	} else {
+		fallbackHTTPSURL, fallbackBootstrapURL := companionFallbackURLs(companionIP)
 		companionService.ConfigureServer(models.CompanionSetup{
 			HTTPSURL:             fmt.Sprintf("https://%s:8443", companionStableHostname),
 			BootstrapURL:         fmt.Sprintf("http://%s:8080/companion-setup", companionStableHostname),
-			FallbackHTTPSURL:     fmt.Sprintf("https://%s:8443", companionIP),
-			FallbackBootstrapURL: fmt.Sprintf("http://%s:8080/companion-setup", companionIP),
+			FallbackHTTPSURL:     fallbackHTTPSURL,
+			FallbackBootstrapURL: fallbackBootstrapURL,
 			StableHostname:       companionStableHostname,
 			LANIP:                companionIP,
 			CAFingerprint:        companionPKI.caFingerprint,
 		})
-		startCompanionHTTPS(frontendFS, companionService, companionPKI)
-		startCompanionMDNS(companionService, companionStableHostname)
+		if fallbackHTTPSURL == "" {
+			updateCompanionNetworkSetup(companionService, "")
+		}
+		startCompanionHTTPS(frontendFS, companionService, companionPKI, companionCertificates)
+		startCompanionMDNS(companionService, companionStableHostname, companionIP, companionCertificates)
 	}
 
 	go func() {
 		mux := http.NewServeMux()
 		if companionPKIErr == nil {
-			companionPKI.registerBootstrap(mux)
+			companionPKI.registerBootstrap(mux, companionService)
 		}
 		mux.Handle("/", http.FileServer(http.FS(frontendFS)))
 		mux.HandleFunc("/api/status", func(w http.ResponseWriter, r *http.Request) {
