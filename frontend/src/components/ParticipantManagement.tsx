@@ -3,6 +3,7 @@ import { ParticipantService, ReportingService, RunSignUpService, RaceService } f
 import { DatabaseService } from '../../bindings/github.com/ssnodgrass/race-assistant';
 import { Participant, Event as RaceEvent, RSUEvent } from '../../bindings/github.com/ssnodgrass/race-assistant/models';
 import { isBrowserPreview } from '../utils/runtime';
+import { NonNegativeNumberInput } from './NonNegativeNumberInput';
 
 interface ParticipantManagementProps {
   raceID: number;
@@ -501,7 +502,7 @@ export const ParticipantManagement: React.FC<ParticipantManagementProps> = ({ ra
                         {assignNewBibs && (
                             <div className="flex-row">
                                 <label style={{ margin: 0 }}>Start sequence at:</label>
-                                <input type="number" value={startBib} onChange={e => setStartBib(e.target.value)} style={{ width: '100px' }} />
+                                <NonNegativeNumberInput value={startBib} onValueChange={setStartBib} style={{ width: '100px' }} />
                             </div>
                         )}
                     </div>
@@ -536,7 +537,7 @@ export const ParticipantManagement: React.FC<ParticipantManagementProps> = ({ ra
             </div>
             <div>
               <label style={{ display: 'block', marginBottom: '8px', fontWeight: 600, fontSize: '0.85em', color: 'var(--text-dim)' }}>START POSITION</label>
-              <input type="number" min={1} value={labelOptions.startPosition} onChange={e => setLabelOptions({...labelOptions, startPosition: e.target.value})} />
+              <NonNegativeNumberInput value={labelOptions.startPosition} onValueChange={value => setLabelOptions({...labelOptions, startPosition: value})} />
             </div>
             <button onClick={() => handlePrintLabels(false)} disabled={isGeneratingLabels} style={{ padding: '12px 18px', backgroundColor: 'var(--success)' }}>
               {isGeneratingLabels ? 'Generating...' : 'Generate PDF'}
@@ -556,11 +557,11 @@ export const ParticipantManagement: React.FC<ParticipantManagementProps> = ({ ra
               <>
                 <div>
                   <label style={{ display: 'block', marginBottom: '8px', fontWeight: 600, fontSize: '0.85em', color: 'var(--text-dim)' }}>START BIB</label>
-                  <input type="number" min={1} value={labelOptions.startBib} onChange={e => setLabelOptions({...labelOptions, startBib: e.target.value})} />
+                  <NonNegativeNumberInput value={labelOptions.startBib} onValueChange={value => setLabelOptions({...labelOptions, startBib: value})} />
                 </div>
                 <div>
                   <label style={{ display: 'block', marginBottom: '8px', fontWeight: 600, fontSize: '0.85em', color: 'var(--text-dim)' }}>END BIB</label>
-                  <input type="number" min={1} value={labelOptions.endBib} onChange={e => setLabelOptions({...labelOptions, endBib: e.target.value})} />
+                  <NonNegativeNumberInput value={labelOptions.endBib} onValueChange={value => setLabelOptions({...labelOptions, endBib: value})} />
                 </div>
               </>
             )}
@@ -579,25 +580,25 @@ export const ParticipantManagement: React.FC<ParticipantManagementProps> = ({ ra
             {labelOptions.source === 'placeholder' && (
               <div>
                 <label style={{ display: 'block', marginBottom: '8px', fontWeight: 600, fontSize: '0.85em', color: 'var(--text-dim)' }}>COPIES</label>
-                <input type="number" min={1} value={labelOptions.startBib} onChange={e => setLabelOptions({...labelOptions, startBib: e.target.value})} />
+                <NonNegativeNumberInput value={labelOptions.startBib} onValueChange={value => setLabelOptions({...labelOptions, startBib: value})} />
               </div>
             )}
 
             <div>
               <label style={{ display: 'block', marginBottom: '8px', fontWeight: 600, fontSize: '0.85em', color: 'var(--text-dim)' }}>TOP MARGIN (IN)</label>
-              <input type="number" step="0.001" value={labelOptions.marginTopIn} onChange={e => setLabelOptions({...labelOptions, marginTopIn: e.target.value})} />
+              <NonNegativeNumberInput decimal value={labelOptions.marginTopIn} onValueChange={value => setLabelOptions({...labelOptions, marginTopIn: value})} />
             </div>
             <div>
               <label style={{ display: 'block', marginBottom: '8px', fontWeight: 600, fontSize: '0.85em', color: 'var(--text-dim)' }}>LEFT MARGIN (IN)</label>
-              <input type="number" step="0.001" value={labelOptions.marginLeftIn} onChange={e => setLabelOptions({...labelOptions, marginLeftIn: e.target.value})} />
+              <NonNegativeNumberInput decimal value={labelOptions.marginLeftIn} onValueChange={value => setLabelOptions({...labelOptions, marginLeftIn: value})} />
             </div>
             <div>
               <label style={{ display: 'block', marginBottom: '8px', fontWeight: 600, fontSize: '0.85em', color: 'var(--text-dim)' }}>H GAP (IN)</label>
-              <input type="number" step="0.001" min={0} value={labelOptions.horizontalGapIn} onChange={e => setLabelOptions({...labelOptions, horizontalGapIn: e.target.value})} />
+              <NonNegativeNumberInput decimal value={labelOptions.horizontalGapIn} onValueChange={value => setLabelOptions({...labelOptions, horizontalGapIn: value})} />
             </div>
             <div>
               <label style={{ display: 'block', marginBottom: '8px', fontWeight: 600, fontSize: '0.85em', color: 'var(--text-dim)' }}>V GAP (IN)</label>
-              <input type="number" step="0.001" min={0} value={labelOptions.verticalGapIn} onChange={e => setLabelOptions({...labelOptions, verticalGapIn: e.target.value})} />
+              <NonNegativeNumberInput decimal value={labelOptions.verticalGapIn} onValueChange={value => setLabelOptions({...labelOptions, verticalGapIn: value})} />
             </div>
           </div>
         </div>
@@ -635,7 +636,7 @@ export const ParticipantManagement: React.FC<ParticipantManagementProps> = ({ ra
             </div>
             <div className="flex-row" style={{ flexDirection: 'column', alignItems: 'stretch' }}>
                 <label style={{ display: 'block', marginBottom: '8px', fontWeight: 600, fontSize: '0.85em', color: 'var(--text-dim)' }}>AGE</label>
-                <input type="number" value={form.age} onChange={e => setForm({...form, age: e.target.value})} placeholder="Required" required min={0} />
+                <NonNegativeNumberInput value={form.age} onValueChange={value => setForm({...form, age: value})} placeholder="Required" required />
             </div>
             <div style={{ alignSelf: 'center', paddingTop: '20px' }}>
                 <label style={{ display: 'flex', alignItems: 'center', gap: '10px', cursor: 'pointer' }}>

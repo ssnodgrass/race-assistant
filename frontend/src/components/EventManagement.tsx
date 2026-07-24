@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { EventService, RunSignUpService, RaceService } from '../../bindings/github.com/ssnodgrass/race-assistant/services';
 import { Event as RaceEvent, RSUEvent } from '../../bindings/github.com/ssnodgrass/race-assistant/models';
+import { NonNegativeNumberInput } from './NonNegativeNumberInput';
 
 interface EventManagementProps {
   raceID: number;
@@ -99,7 +100,7 @@ export const EventManagement: React.FC<EventManagementProps> = ({ raceID, events
                 </div>
                 <div style={{ width: '120px' }}>
                     <label style={{ display: 'block', marginBottom: '8px', fontWeight: 600, fontSize: '0.85em', color: 'var(--text-dim)' }}>DISTANCE (KM)</label>
-                    <input type="number" step="0.01" value={form.distance} onChange={e => setForm({...form, distance: e.target.value})} required style={{ width: '100%' }} />
+                    <NonNegativeNumberInput decimal value={form.distance} onValueChange={value => setForm({...form, distance: value})} required style={{ width: '100%' }} />
                 </div>
                 <div style={{ flex: 1.5 }}>
                     <label style={{ display: 'block', marginBottom: '8px', fontWeight: 600, fontSize: '0.85em', color: 'var(--text-dim)' }}>RUNSIGNUP MAPPING</label>
