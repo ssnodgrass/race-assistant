@@ -14,6 +14,14 @@ The Phone Companion is a local-only PWA served by the Race Assistant laptop. It 
 
 The phone keeps an authenticated Server-Sent Events stream open to the laptop for state and liveness. The server emits state once per second; if a paired phone receives nothing for 3.5 seconds it reports **Disconnected**, even when the operating system still considers cellular data online. The unpaired screen uses a slower API health check and a longer timeout so expected authorization responses do not make its connection warning flash. Commands continue to use the idempotent HTTP API, so a WebSocket protocol is unnecessary.
 
+## Pre-race check-in
+
+The desktop can turn a normal companion pairing grant into a separate `/checkin/` QR. It uses the same one-time pairing, device authorization, HTTPS certificate, and active companion session, but opens an installable participant lookup interface instead of adding another tab to the race-operations UI.
+
+The check-in station caches the race roster locally, searches by name or bib, displays event, age, and gender, and assigns a bib while marking the participant checked in. Each change is first placed in a device-local idempotent queue and then written to the laptop's SQLite database. Multiple iPads can pair independently. The existing race-wide unique-bib trigger rejects conflicting assignments; a rejected offline item stays queued so the operator can correct it.
+
+This workflow requires no internet connection because the laptop remains the local system of record. It does not currently push check-in status or bib changes back to RunSignUp; the existing RunSignUp integration only imports participants and does not retain the remote registration identifiers required for safe outbound synchronization.
+
 ## Local networking and trust
 
 - Port `8080` serves only the certificate/profile bootstrap page.

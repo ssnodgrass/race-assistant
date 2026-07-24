@@ -21,6 +21,7 @@ import { StopwatchImport } from './components/StopwatchImport';
 import { LiveResults } from './components/LiveResults';
 import { CompanionManager } from './components/CompanionManager';
 import { CompanionApp } from './components/CompanionApp';
+import { CheckInApp } from './components/CheckInApp';
 import { isBrowserPreview } from './utils/runtime';
 import packageJSON from '../package.json';
 
@@ -30,6 +31,7 @@ type View = 'list' | 'race_detail' | 'create_race' | 'manage_events' | 'award_co
 
 function App() {
   const isCompanion = window.location.pathname.startsWith('/companion');
+  const isCheckIn = window.location.pathname.startsWith('/checkin');
   const appVersion = packageJSON.version;
   const initialView = new URLSearchParams(window.location.search).get('view') as View | null;
   const [dbPath, setDbPath] = useState<string>('');
@@ -147,6 +149,7 @@ function App() {
   );
 
   if (isCompanion) return <CompanionApp />;
+  if (isCheckIn) return <CheckInApp />;
 
   if (isExternalDisplay || isBrowserMode) {
     return (

@@ -542,6 +542,72 @@ func TestCompanionNumericPairingCodeIsEightDigitsAndSingleUse(t *testing.T) {
 	}
 }
 
+func TestCompanionCheckInAssignsBibAndIsIdempotent(t *testing.T) {
+	service, _, race, _, _ := setupCompanionTest(t)
+	session, err := service.StartSession(race.ID, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	token := pairCompanion(t, service, session.ID, "Check-in iPad")
+	roster, err := service.CheckInRoster(token)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if roster.RaceName != race.Name || len(roster.Participants) != 3 {
+		t.Fatalf("unexpected check-in roster: %+v", roster)
+	}
+
+	request := models.CompanionCheckInRequest{
+		RequestID:     "checkin-1",
+		ParticipantID: roster.Participants[0].ID,
+		BibNumber:     "501",
+		CapturedAt:    time.Now().UnixMilli(),
+	}
+	ack, err := service.SubmitCheckIn(token, request)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if ack.Status != "accepted" || !ack.Participant.CheckedIn || ack.Participant.BibNumber != "501" {
+		t.Fatalf("unexpected check-in acknowledgement: %+v", ack)
+	}
+	duplicate, err := service.SubmitCheckIn(token, request)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if duplicate.Status != "duplicate" || duplicate.Participant.BibNumber != "501" {
+		t.Fatalf("idempotent retry changed the check-in: %+v", duplicate)
+	}
+}
+
+func TestCompanionCheckInRejectsDuplicateRaceBib(t *testing.T) {
+	service, _, race, _, _ := setupCompanionTest(t)
+	session, err := service.StartSession(race.ID, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	token := pairCompanion(t, service, session.ID, "Check-in iPad")
+	roster, err := service.CheckInRoster(token)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var participantID int
+	for _, participant := range roster.Participants {
+		if participant.BibNumber != "101" {
+			participantID = participant.ID
+			break
+		}
+	}
+	_, err = service.SubmitCheckIn(token, models.CompanionCheckInRequest{
+		RequestID:     "duplicate-bib-checkin",
+		ParticipantID: participantID,
+		BibNumber:     "101",
+		CapturedAt:    time.Now().UnixMilli(),
+	})
+	if err == nil || !strings.Contains(err.Error(), "bib number already exists") {
+		t.Fatalf("expected duplicate bib rejection, got %v", err)
+	}
+}
+
 func TestCompanionUnpairRevokesDeviceAndReleasesRole(t *testing.T) {
 	service, _, race, _, _ := setupCompanionTest(t)
 	session, err := service.StartSession(race.ID, 0)

@@ -294,6 +294,125 @@ func (s *CompanionService) StateForToken(token string) (models.CompanionState, e
 	return s.getStateLocked(id.Session.ID)
 }
 
+func (s *CompanionService) CheckInRoster(token string) (models.CompanionCheckInRoster, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	id, err := s.authenticateLocked(token)
+	if err != nil {
+		return models.CompanionCheckInRoster{}, err
+	}
+	return s.checkInRosterLocked(id)
+}
+
+func (s *CompanionService) checkInRosterLocked(id companionIdentity) (models.CompanionCheckInRoster, error) {
+	var roster models.CompanionCheckInRoster
+	roster.SessionID = id.Session.ID
+	if err := s.db.QueryRow("SELECT name FROM races WHERE id=?", id.Session.RaceID).Scan(&roster.RaceName); err != nil {
+		return roster, err
+	}
+	rows, err := s.db.Query(`SELECT p.id,p.event_id,COALESCE(e.name,''),p.bib_number,
+		p.first_name,p.last_name,p.gender,p.age_on_race_day,p.checked_in
+		FROM participants p LEFT JOIN events e ON e.id=p.event_id
+		WHERE p.race_id=? ORDER BY p.last_name,p.first_name,p.id`, id.Session.RaceID)
+	if err != nil {
+		return roster, err
+	}
+	defer rows.Close()
+	roster.Participants = make([]models.CompanionCheckInParticipant, 0)
+	for rows.Next() {
+		var participant models.CompanionCheckInParticipant
+		if err := rows.Scan(
+			&participant.ID, &participant.EventID, &participant.EventName, &participant.BibNumber,
+			&participant.FirstName, &participant.LastName, &participant.Gender, &participant.Age,
+			&participant.CheckedIn,
+		); err != nil {
+			return roster, err
+		}
+		roster.Participants = append(roster.Participants, participant)
+	}
+	return roster, rows.Err()
+}
+
+func (s *CompanionService) SubmitCheckIn(token string, request models.CompanionCheckInRequest) (models.CompanionCheckInAck, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	id, err := s.authenticateLocked(token)
+	if err != nil {
+		return models.CompanionCheckInAck{}, err
+	}
+	return s.submitCheckInLocked(id, request)
+}
+
+func (s *CompanionService) submitCheckInLocked(id companionIdentity, request models.CompanionCheckInRequest) (models.CompanionCheckInAck, error) {
+	bib := strings.TrimSpace(request.BibNumber)
+	if request.RequestID == "" || request.ParticipantID <= 0 || bib == "" || request.CapturedAt <= 0 {
+		return models.CompanionCheckInAck{}, fmt.Errorf("request_id, participant_id, bib_number, and captured_at_unix_ms are required")
+	}
+
+	var priorSession, priorDevice, priorBib string
+	var priorParticipant int
+	var priorCaptured int64
+	err := s.db.QueryRow(`SELECT session_id,device_id,participant_id,bib_number,captured_at_unix_ms
+		FROM companion_checkins WHERE request_id=?`, request.RequestID).
+		Scan(&priorSession, &priorDevice, &priorParticipant, &priorBib, &priorCaptured)
+	if err == nil {
+		if priorSession != id.Session.ID || priorDevice != id.DeviceID || priorParticipant != request.ParticipantID ||
+			priorBib != bib || priorCaptured != request.CapturedAt {
+			return models.CompanionCheckInAck{}, fmt.Errorf("request_id is already used by another check-in")
+		}
+		participant, err := s.checkInParticipantLocked(id.Session.RaceID, request.ParticipantID)
+		return models.CompanionCheckInAck{RequestID: request.RequestID, Status: "duplicate", Participant: participant}, err
+	}
+	if err != sql.ErrNoRows {
+		return models.CompanionCheckInAck{}, err
+	}
+
+	tx, err := s.db.BeginTx(context.Background(), nil)
+	if err != nil {
+		return models.CompanionCheckInAck{}, err
+	}
+	defer tx.Rollback()
+	var participantRaceID int
+	if err := tx.QueryRow("SELECT race_id FROM participants WHERE id=?", request.ParticipantID).Scan(&participantRaceID); err != nil {
+		if err == sql.ErrNoRows {
+			return models.CompanionCheckInAck{}, fmt.Errorf("participant not found")
+		}
+		return models.CompanionCheckInAck{}, err
+	}
+	if participantRaceID != id.Session.RaceID {
+		return models.CompanionCheckInAck{}, fmt.Errorf("participant does not belong to this race")
+	}
+	if _, err := tx.Exec("UPDATE participants SET bib_number=?,checked_in=1 WHERE id=?", bib, request.ParticipantID); err != nil {
+		return models.CompanionCheckInAck{}, err
+	}
+	if _, err := tx.Exec(`INSERT INTO companion_checkins
+		(request_id,session_id,device_id,participant_id,bib_number,captured_at_unix_ms,accepted_at_unix_ms)
+		VALUES(?,?,?,?,?,?,?)`, request.RequestID, id.Session.ID, id.DeviceID, request.ParticipantID, bib, request.CapturedAt, time.Now().UnixMilli()); err != nil {
+		return models.CompanionCheckInAck{}, err
+	}
+	if err := tx.Commit(); err != nil {
+		return models.CompanionCheckInAck{}, err
+	}
+	participant, err := s.checkInParticipantLocked(id.Session.RaceID, request.ParticipantID)
+	return models.CompanionCheckInAck{RequestID: request.RequestID, Status: "accepted", Participant: participant}, err
+}
+
+func (s *CompanionService) checkInParticipantLocked(raceID, participantID int) (models.CompanionCheckInParticipant, error) {
+	var participant models.CompanionCheckInParticipant
+	err := s.db.QueryRow(`SELECT p.id,p.event_id,COALESCE(e.name,''),p.bib_number,
+		p.first_name,p.last_name,p.gender,p.age_on_race_day,p.checked_in
+		FROM participants p LEFT JOIN events e ON e.id=p.event_id
+		WHERE p.race_id=? AND p.id=?`, raceID, participantID).Scan(
+		&participant.ID, &participant.EventID, &participant.EventName, &participant.BibNumber,
+		&participant.FirstName, &participant.LastName, &participant.Gender, &participant.Age,
+		&participant.CheckedIn,
+	)
+	if err == sql.ErrNoRows {
+		return participant, fmt.Errorf("participant not found")
+	}
+	return participant, err
+}
+
 func (s *CompanionService) GetState(sessionID string) (models.CompanionState, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()

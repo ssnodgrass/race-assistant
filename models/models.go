@@ -172,6 +172,37 @@ type CompanionAck struct {
 	Warning         string `json:"warning"`
 }
 
+type CompanionCheckInParticipant struct {
+	ID        int    `json:"id"`
+	EventID   int    `json:"event_id"`
+	EventName string `json:"event_name"`
+	BibNumber string `json:"bib_number"`
+	FirstName string `json:"first_name"`
+	LastName  string `json:"last_name"`
+	Gender    string `json:"gender"`
+	Age       int    `json:"age"`
+	CheckedIn bool   `json:"checked_in"`
+}
+
+type CompanionCheckInRoster struct {
+	SessionID    string                        `json:"session_id"`
+	RaceName     string                        `json:"race_name"`
+	Participants []CompanionCheckInParticipant `json:"participants"`
+}
+
+type CompanionCheckInRequest struct {
+	RequestID     string `json:"request_id"`
+	ParticipantID int    `json:"participant_id"`
+	BibNumber     string `json:"bib_number"`
+	CapturedAt    int64  `json:"captured_at_unix_ms"`
+}
+
+type CompanionCheckInAck struct {
+	RequestID   string                      `json:"request_id"`
+	Status      string                      `json:"status"`
+	Participant CompanionCheckInParticipant `json:"participant"`
+}
+
 type SegmentEventSelection struct {
 	Segment int `json:"segment"`
 	EventID int `json:"event_id"`

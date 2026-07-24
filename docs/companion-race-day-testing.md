@@ -41,6 +41,19 @@ Do not remove an old IP-based installation while it contains unsent entries. Res
 7. With no current-session entries queued, select **Leave race / pair again**. Confirm the device is revoked, its role is released, and the installed PWA returns to its camera/code pairing screen.
 8. Queue an offline capture and confirm race switching is blocked until that current-session entry is synchronized or deleted through **Review Local Queue**.
 
+## Pre-race check-in test
+
+1. Start a companion session and choose **Pre-race check-in QR**.
+2. Scan the QR with an iPad, name the station, pair it, and add the check-in page to the home screen.
+3. Search by first name, last name, and existing bib; confirm the same participant is found each way.
+4. Select a participant and confirm event, age, and gender are shown. Shirt displays **Not tracked** until shirt data is added to Race Assistant.
+5. Assign a bib and check in. Confirm the desktop participant list shows the new bib and checked-in status.
+6. Pair a second iPad and confirm it sees the update after its next roster refresh.
+7. Disconnect an iPad from the laptop network, check in another participant, and confirm the pending-sync banner appears. Reconnect and confirm the assignment is written exactly once.
+8. While disconnected, attempt to assign a bib that another station has already used. Reconnect, confirm the server leaves the conflicting item pending with a duplicate-bib warning, then select that participant and submit a unique bib.
+
+Check-in updates the local Race Assistant database without internet access. This version does not send check-in status or bib assignments back to RunSignUp.
+
 ## Test fixture
 
 Create a race with one race-wide start and these participants:

@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import { QRCodeSVG } from 'qrcode.react';
 import { CompanionService } from '../../bindings/github.com/ssnodgrass/race-assistant/services';
 import { CompanionPairing, CompanionSetup, CompanionState, Event as RaceEvent, Race } from '../../bindings/github.com/ssnodgrass/race-assistant/models';
+import { checkInPairingURL } from '../utils/checkInPairing';
 
 interface Props { race: Race; events: RaceEvent[]; onRaceRefresh: () => void }
 
@@ -9,6 +10,7 @@ export function CompanionManager({ race, events, onRaceRefresh }: Props) {
   const [setup, setSetup] = useState<CompanionSetup | null>(null);
   const [state, setState] = useState<CompanionState | null>(null);
   const [pairing, setPairing] = useState<CompanionPairing | null>(null);
+  const [pairingMode, setPairingMode] = useState<'race' | 'checkin'>('race');
   const [selectedEventID, setSelectedEventID] = useState(0);
   const [error, setError] = useState('');
 
@@ -40,9 +42,13 @@ export function CompanionManager({ race, events, onRaceRefresh }: Props) {
     } catch (e) { setError(String(e)); }
   };
 
-  const createPairing = async () => {
+  const createPairing = async (mode: 'race' | 'checkin') => {
     if (!state?.session) return;
-    try { setPairing(await CompanionService.CreatePairing(state.session.id)); setError(''); }
+    try {
+      setPairingMode(mode);
+      setPairing(await CompanionService.CreatePairing(state.session.id));
+      setError('');
+    }
     catch (e) { setError(String(e)); }
   };
 
@@ -61,10 +67,12 @@ export function CompanionManager({ race, events, onRaceRefresh }: Props) {
   };
 
   const roleColor = (role: string) => role === 'timer' ? 'var(--success)' : role === 'bib' ? 'var(--accent)' : 'var(--warning)';
+  const pairingURL = pairing ? (pairingMode === 'checkin' ? checkInPairingURL(pairing.url) : pairing.url) : '';
+  const fallbackPairingURL = pairing?.fallback_url ? (pairingMode === 'checkin' ? checkInPairingURL(pairing.fallback_url) : pairing.fallback_url) : '';
 
   return <div style={{ display: 'flex', flexDirection: 'column', minHeight: '100%', flex: '0 0 auto', paddingBottom: 2, gap: 'var(--space-lg)' }}>
     <div className="flex-between">
-      <div><h1 style={{ marginBottom: 4 }}>Phone Companion</h1><div className="text-dim">Secure phone timing and bib entry for {race.name}</div></div>
+      <div><h1 style={{ marginBottom: 4 }}>Phone Companion</h1><div className="text-dim">Secure check-in, phone timing, and bib entry for {race.name}</div></div>
       {state?.session ? <button style={{ background: 'var(--danger)' }} onClick={stopSession}>Stop Session</button> : <div style={{ display: 'flex', alignItems: 'end', gap: 10 }}><label style={{ minWidth: 240 }}><span className="text-dim" style={{ display: 'block', marginBottom: 4 }}>RECORDING SCOPE</span><select value={selectedEventID} onChange={event => setSelectedEventID(Number(event.target.value))}><option value={0}>Common Chute — All Events</option>{events.map(event => <option key={event.id} value={event.id}>{event.name}</option>)}</select></label><button onClick={startSession}>Start Session</button></div>}
     </div>
 
@@ -75,7 +83,7 @@ export function CompanionManager({ race, events, onRaceRefresh }: Props) {
     <div style={{ display: 'grid', gridTemplateColumns: 'minmax(320px, 1fr) minmax(320px, 1fr)', gap: 'var(--space-lg)' }}>
       <div className="card" style={{ margin: 0 }}>
         <h2>1. Trust this laptop</h2>
-        <p className="text-dim">Required once per phone. The stable address remains the same when this laptop's IP changes. Scan, install the Race Assistant CA, and enable full trust.</p>
+        <p className="text-dim">Required once per phone or iPad. The stable address remains the same when this laptop's IP changes. Scan, install the Race Assistant CA, and enable full trust.</p>
         {setup?.bootstrap_url && <div style={{ background: 'white', padding: 14, width: 'fit-content', margin: '18px auto' }}><QRCodeSVG value={setup.bootstrap_url} size={190} marginSize={2}/></div>}
         <div style={{ textAlign: 'center', fontFamily: 'monospace', color: 'var(--success)', marginBottom: 12 }}>{setup?.stable_hostname}</div>
         <div style={{ fontFamily: 'monospace', wordBreak: 'break-all', fontSize: '.78rem', color: 'var(--text-dim)' }}>{setup?.ca_fingerprint}</div>
@@ -84,17 +92,22 @@ export function CompanionManager({ race, events, onRaceRefresh }: Props) {
       </div>
 
       <div className="card" style={{ margin: 0, opacity: state?.session ? 1 : .55 }}>
-        <h2>2. Pair a phone</h2>
+        <h2>2. Pair a station</h2>
         {!state?.session ? <p>Start a session before pairing phones.</p> : <>
-          <button onClick={createPairing} style={{ width: '100%' }}>Generate pairing QR and code</button>
+          <p className="text-dim">Race operations opens the start/timer/bib app. Pre-race check-in opens a separate participant lookup app designed for iPads. It updates the local race database without internet; RunSignUp cloud check-in is not sent by this version.</p>
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
+            <button onClick={() => createPairing('race')}>Race operations QR</button>
+            <button onClick={() => createPairing('checkin')} style={{ background: '#1c9b48' }}>Pre-race check-in QR</button>
+          </div>
           {pairing && <>
-            <div style={{ background: 'white', padding: 14, width: 'fit-content', margin: '18px auto' }}><QRCodeSVG value={pairing.url} size={220} level="M" marginSize={2}/></div>
+            <h3 style={{ textAlign: 'center', marginTop: 18 }}>{pairingMode === 'checkin' ? 'Pre-race Check-In' : 'Race Operations'}</h3>
+            <div style={{ background: 'white', padding: 14, width: 'fit-content', margin: '12px auto 18px' }}><QRCodeSVG value={pairingURL} size={220} level="M" marginSize={2}/></div>
             <div style={{ textAlign: 'center' }}>
               <div className="text-dim" style={{ fontSize: '.8rem', fontWeight: 700, letterSpacing: '.08em' }}>OR ENTER THIS ONE-TIME CODE</div>
               <div style={{ font: '800 2.4rem monospace', letterSpacing: '.2em', margin: '8px 0' }}>{pairing.code}</div>
               <p className="text-dim">QR and code are single use · expires {new Date(pairing.expires_at_unix_ms).toLocaleTimeString()}</p>
             </div>
-            {pairing.fallback_url && <details style={{ marginTop: 12 }}><summary style={{ cursor: 'pointer', color: 'var(--warning)' }}>Show IP fallback pairing QR</summary><div style={{ background: 'white', padding: 12, width: 'fit-content', margin: '14px auto' }}><QRCodeSVG value={pairing.fallback_url} size={170} level="M" marginSize={2}/></div></details>}
+            {fallbackPairingURL && <details style={{ marginTop: 12 }}><summary style={{ cursor: 'pointer', color: 'var(--warning)' }}>Show IP fallback pairing QR</summary><div style={{ background: 'white', padding: 12, width: 'fit-content', margin: '14px auto' }}><QRCodeSVG value={fallbackPairingURL} size={170} level="M" marginSize={2}/></div></details>}
           </>}
         </>}
       </div>
