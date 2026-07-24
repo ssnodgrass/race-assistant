@@ -30,6 +30,8 @@ export function CompanionManager({ race, events, onRaceRefresh }: Props) {
     return () => clearInterval(timer);
   }, [race.id]);
 
+  useEffect(() => { setPairing(null); }, [setup?.lan_ip]);
+
   useEffect(() => { if (state?.race_start) onRaceRefresh(); }, [state?.race_start]);
 
   const startSession = async () => {

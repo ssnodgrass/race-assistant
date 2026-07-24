@@ -21,7 +21,7 @@ The in-app camera uses the same secure browser camera API on iOS and Android, bu
 ## Network and offline-shell test
 
 1. With the laptop and phone on the same LAN or hotspot, open `https://race-assistant.local:8443/companion/` and confirm the trusted companion loads.
-2. Note the laptop's current IP, pair the installed `.local` PWA, then change the laptop's DHCP address without closing Race Assistant. Allow up to six seconds and confirm the `.local` PWA reconnects. If the network interface itself changed, restart Race Assistant before testing the fallback URL.
+2. Note the laptop's current IP, pair the installed `.local` PWA, then change the laptop's DHCP address or network interface without closing Race Assistant. Allow up to six seconds and confirm the `.local` PWA reconnects and the desktop's IP fallback changes to the new address. Generate a new pairing QR after the address changes.
 3. Block multicast or use a network where `.local` does not resolve. Confirm the desktop shows a discovery warning and that its IP fallback setup and pairing QRs work.
 4. Launch the paired PWA once while connected so cache version 9 installs. Close it, stop Race Assistant or disconnect the phone, and reopen the PWA.
 5. Confirm the cached interface appears immediately instead of a black screen, displays **Server disconnected**, retains the local queue, and offers **Retry**.

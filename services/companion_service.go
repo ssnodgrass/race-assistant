@@ -63,6 +63,26 @@ func (s *CompanionService) ConfigureServer(setup models.CompanionSetup) {
 	s.setup = setup
 }
 
+func (s *CompanionService) UpdateServerNetwork(lanIP, fallbackHTTPSURL, fallbackBootstrapURL string) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.setup.LANIP = lanIP
+	s.setup.FallbackHTTPSURL = fallbackHTTPSURL
+	s.setup.FallbackBootstrapURL = fallbackBootstrapURL
+}
+
+func (s *CompanionService) SetDiscoveryError(message string) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.setup.DiscoveryError = message
+}
+
+func (s *CompanionService) SetServerError(message string) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.setup.ServerError = message
+}
+
 func (s *CompanionService) GetSetup() models.CompanionSetup {
 	s.mu.Lock()
 	defer s.mu.Unlock()
