@@ -27,6 +27,7 @@ export const CSVImport: React.FC<CSVImportProps> = ({ raceID, events, onComplete
     { key: 'age', label: 'Age' },
     { key: 'dob', label: 'DOB' },
     { key: 'bib', label: 'Bib Number' },
+    { key: 'shirt_size', label: 'Shirt Size' },
     { key: 'event', label: 'Event Name (Optional)' },
   ];
 
@@ -46,6 +47,7 @@ export const CSVImport: React.FC<CSVImportProps> = ({ raceID, events, onComplete
         if (lowerH === 'age') newMapping['age'] = i;
         if (lowerH.includes('dob') || lowerH.includes('birth')) newMapping['dob'] = i;
         if (lowerH === 'bib' || lowerH.includes('number')) newMapping['bib'] = i;
+        if (lowerH.includes('shirt') || lowerH.includes('giveaway')) newMapping['shirt_size'] = i;
         if (lowerH === 'event') newMapping['event'] = i;
       });
       setMapping(newMapping);

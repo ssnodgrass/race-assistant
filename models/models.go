@@ -48,6 +48,7 @@ type RSURegistration struct {
 	User     RSUUser `json:"user"`
 	BibNum   *string `json:"bib_num"`
 	Age      int     `json:"age"`
+	Giveaway *string `json:"giveaway"`
 	TeamName *string `json:"team_name"`
 }
 
@@ -65,6 +66,7 @@ type Participant struct {
 	Gender       string     `json:"gender"`
 	DOB          *time.Time `json:"dob"`
 	AgeOnRaceDay int        `json:"age_on_race_day"`
+	ShirtSize    string     `json:"shirt_size"`
 	CheckedIn    bool       `json:"checked_in"`
 }
 
