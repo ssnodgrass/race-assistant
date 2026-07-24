@@ -3,6 +3,7 @@ import { ParticipantService, ReportingService, RunSignUpService, RaceService } f
 import { DatabaseService } from '../../bindings/github.com/ssnodgrass/race-assistant';
 import { Participant, Event as RaceEvent, RSUEvent } from '../../bindings/github.com/ssnodgrass/race-assistant/models';
 import { isBrowserPreview } from '../utils/runtime';
+import { NonNegativeNumberInput } from './NonNegativeNumberInput';
 
 interface ParticipantManagementProps {
   raceID: number;
@@ -12,7 +13,7 @@ interface ParticipantManagementProps {
   onImport: () => void;
 }
 
-type SortKey = 'bib' | 'name' | 'gender' | 'age' | 'event' | 'checked';
+type SortKey = 'bib' | 'name' | 'gender' | 'age' | 'shirt' | 'event' | 'checked';
 type LabelSource = 'participants' | 'range' | 'custom' | 'placeholder';
 type LabelSheet = 'avery5160_30' | 'avery5161_20';
 type ParticipantForm = {
@@ -22,13 +23,14 @@ type ParticipantForm = {
   gender: string;
   age: string;
   dob: string;
+  shirtSize: string;
   eventID: number;
   checked: boolean;
 };
 
 export const ParticipantManagement: React.FC<ParticipantManagementProps> = ({ raceID, events, participants, onRefresh, onImport }) => {
   const makeEmptyForm = (eventID: number): ParticipantForm => ({
-    bib: '', first: '', last: '', gender: '', age: '', dob: '', eventID, checked: false
+    bib: '', first: '', last: '', gender: '', age: '', dob: '', shirtSize: '', eventID, checked: false
   });
   const makeParticipantForm = (p: Participant): ParticipantForm => ({
     bib: p.bib_number,
@@ -37,6 +39,7 @@ export const ParticipantManagement: React.FC<ParticipantManagementProps> = ({ ra
     gender: p.gender,
     age: p.age_on_race_day.toString(),
     dob: p.dob ? p.dob.split('T')[0] : '',
+    shirtSize: p.shirt_size,
     eventID: p.event_id,
     checked: p.checked_in,
   });
@@ -88,6 +91,7 @@ export const ParticipantManagement: React.FC<ParticipantManagementProps> = ({ ra
       current.gender !== original.gender ||
       current.age !== original.age ||
       current.dob !== original.dob ||
+      current.shirtSize !== original.shirtSize ||
       Number(current.eventID) !== Number(original.eventID) ||
       current.checked !== original.checked;
   };
@@ -363,7 +367,8 @@ export const ParticipantManagement: React.FC<ParticipantManagementProps> = ({ ra
       id: editingID || 0, race_id: raceID, event_id: Number(form.eventID),
       bib_number: form.bib, first_name: form.first, last_name: form.last,
       gender: form.gender, age_on_race_day: parseInt(form.age) || 0,
-      dob: form.dob ? new Date(form.dob).toISOString() : null, checked_in: form.checked
+      dob: form.dob ? new Date(form.dob).toISOString() : null,
+      shirt_size: form.shirtSize.trim(), checked_in: form.checked
     });
     const action = editingID ? ParticipantService.UpdateParticipant(p) : ParticipantService.AddParticipant(p);
     action.then(() => {
@@ -384,7 +389,8 @@ export const ParticipantManagement: React.FC<ParticipantManagementProps> = ({ ra
     return p.bib_number.toLowerCase().includes(query) ||
            p.first_name.toLowerCase().includes(query) ||
            p.last_name.toLowerCase().includes(query) ||
-           p.gender.toLowerCase().includes(query);
+           p.gender.toLowerCase().includes(query) ||
+           p.shirt_size.toLowerCase().includes(query);
   });
 
   const sortedParticipants = [...filteredParticipants].sort((a, b) => {
@@ -393,6 +399,7 @@ export const ParticipantManagement: React.FC<ParticipantManagementProps> = ({ ra
     else if (sortKey === 'name') res = `${a.last_name}${a.first_name}`.localeCompare(`${b.last_name}${b.first_name}`);
     else if (sortKey === 'gender') res = a.gender.localeCompare(b.gender);
     else if (sortKey === 'age') res = a.age_on_race_day - b.age_on_race_day;
+    else if (sortKey === 'shirt') res = a.shirt_size.localeCompare(b.shirt_size);
     else if (sortKey === 'event') res = (events.find(e => e.id === a.event_id)?.name || '').localeCompare(events.find(e => e.id === b.event_id)?.name || '');
     else if (sortKey === 'checked') res = (a.checked_in === b.checked_in) ? 0 : (a.checked_in ? -1 : 1);
     return sortDir === 'asc' ? res : -res;
@@ -501,7 +508,7 @@ export const ParticipantManagement: React.FC<ParticipantManagementProps> = ({ ra
                         {assignNewBibs && (
                             <div className="flex-row">
                                 <label style={{ margin: 0 }}>Start sequence at:</label>
-                                <input type="number" value={startBib} onChange={e => setStartBib(e.target.value)} style={{ width: '100px' }} />
+                                <NonNegativeNumberInput value={startBib} onValueChange={setStartBib} style={{ width: '100px' }} />
                             </div>
                         )}
                     </div>
@@ -536,7 +543,7 @@ export const ParticipantManagement: React.FC<ParticipantManagementProps> = ({ ra
             </div>
             <div>
               <label style={{ display: 'block', marginBottom: '8px', fontWeight: 600, fontSize: '0.85em', color: 'var(--text-dim)' }}>START POSITION</label>
-              <input type="number" min={1} value={labelOptions.startPosition} onChange={e => setLabelOptions({...labelOptions, startPosition: e.target.value})} />
+              <NonNegativeNumberInput value={labelOptions.startPosition} onValueChange={value => setLabelOptions({...labelOptions, startPosition: value})} />
             </div>
             <button onClick={() => handlePrintLabels(false)} disabled={isGeneratingLabels} style={{ padding: '12px 18px', backgroundColor: 'var(--success)' }}>
               {isGeneratingLabels ? 'Generating...' : 'Generate PDF'}
@@ -556,11 +563,11 @@ export const ParticipantManagement: React.FC<ParticipantManagementProps> = ({ ra
               <>
                 <div>
                   <label style={{ display: 'block', marginBottom: '8px', fontWeight: 600, fontSize: '0.85em', color: 'var(--text-dim)' }}>START BIB</label>
-                  <input type="number" min={1} value={labelOptions.startBib} onChange={e => setLabelOptions({...labelOptions, startBib: e.target.value})} />
+                  <NonNegativeNumberInput value={labelOptions.startBib} onValueChange={value => setLabelOptions({...labelOptions, startBib: value})} />
                 </div>
                 <div>
                   <label style={{ display: 'block', marginBottom: '8px', fontWeight: 600, fontSize: '0.85em', color: 'var(--text-dim)' }}>END BIB</label>
-                  <input type="number" min={1} value={labelOptions.endBib} onChange={e => setLabelOptions({...labelOptions, endBib: e.target.value})} />
+                  <NonNegativeNumberInput value={labelOptions.endBib} onValueChange={value => setLabelOptions({...labelOptions, endBib: value})} />
                 </div>
               </>
             )}
@@ -579,25 +586,25 @@ export const ParticipantManagement: React.FC<ParticipantManagementProps> = ({ ra
             {labelOptions.source === 'placeholder' && (
               <div>
                 <label style={{ display: 'block', marginBottom: '8px', fontWeight: 600, fontSize: '0.85em', color: 'var(--text-dim)' }}>COPIES</label>
-                <input type="number" min={1} value={labelOptions.startBib} onChange={e => setLabelOptions({...labelOptions, startBib: e.target.value})} />
+                <NonNegativeNumberInput value={labelOptions.startBib} onValueChange={value => setLabelOptions({...labelOptions, startBib: value})} />
               </div>
             )}
 
             <div>
               <label style={{ display: 'block', marginBottom: '8px', fontWeight: 600, fontSize: '0.85em', color: 'var(--text-dim)' }}>TOP MARGIN (IN)</label>
-              <input type="number" step="0.001" value={labelOptions.marginTopIn} onChange={e => setLabelOptions({...labelOptions, marginTopIn: e.target.value})} />
+              <NonNegativeNumberInput decimal value={labelOptions.marginTopIn} onValueChange={value => setLabelOptions({...labelOptions, marginTopIn: value})} />
             </div>
             <div>
               <label style={{ display: 'block', marginBottom: '8px', fontWeight: 600, fontSize: '0.85em', color: 'var(--text-dim)' }}>LEFT MARGIN (IN)</label>
-              <input type="number" step="0.001" value={labelOptions.marginLeftIn} onChange={e => setLabelOptions({...labelOptions, marginLeftIn: e.target.value})} />
+              <NonNegativeNumberInput decimal value={labelOptions.marginLeftIn} onValueChange={value => setLabelOptions({...labelOptions, marginLeftIn: value})} />
             </div>
             <div>
               <label style={{ display: 'block', marginBottom: '8px', fontWeight: 600, fontSize: '0.85em', color: 'var(--text-dim)' }}>H GAP (IN)</label>
-              <input type="number" step="0.001" min={0} value={labelOptions.horizontalGapIn} onChange={e => setLabelOptions({...labelOptions, horizontalGapIn: e.target.value})} />
+              <NonNegativeNumberInput decimal value={labelOptions.horizontalGapIn} onValueChange={value => setLabelOptions({...labelOptions, horizontalGapIn: value})} />
             </div>
             <div>
               <label style={{ display: 'block', marginBottom: '8px', fontWeight: 600, fontSize: '0.85em', color: 'var(--text-dim)' }}>V GAP (IN)</label>
-              <input type="number" step="0.001" min={0} value={labelOptions.verticalGapIn} onChange={e => setLabelOptions({...labelOptions, verticalGapIn: e.target.value})} />
+              <NonNegativeNumberInput decimal value={labelOptions.verticalGapIn} onValueChange={value => setLabelOptions({...labelOptions, verticalGapIn: value})} />
             </div>
           </div>
         </div>
@@ -635,7 +642,11 @@ export const ParticipantManagement: React.FC<ParticipantManagementProps> = ({ ra
             </div>
             <div className="flex-row" style={{ flexDirection: 'column', alignItems: 'stretch' }}>
                 <label style={{ display: 'block', marginBottom: '8px', fontWeight: 600, fontSize: '0.85em', color: 'var(--text-dim)' }}>AGE</label>
-                <input type="number" value={form.age} onChange={e => setForm({...form, age: e.target.value})} placeholder="Required" required min={0} />
+                <NonNegativeNumberInput value={form.age} onValueChange={value => setForm({...form, age: value})} placeholder="Required" required />
+            </div>
+            <div className="flex-row" style={{ flexDirection: 'column', alignItems: 'stretch' }}>
+                <label style={{ display: 'block', marginBottom: '8px', fontWeight: 600, fontSize: '0.85em', color: 'var(--text-dim)' }}>SHIRT SIZE</label>
+                <input value={form.shirtSize} onChange={e => setForm({...form, shirtSize: e.target.value})} placeholder="Optional (for example, Adult M)" />
             </div>
             <div style={{ alignSelf: 'center', paddingTop: '20px' }}>
                 <label style={{ display: 'flex', alignItems: 'center', gap: '10px', cursor: 'pointer' }}>
@@ -660,6 +671,7 @@ export const ParticipantManagement: React.FC<ParticipantManagementProps> = ({ ra
               <th onClick={() => toggleSort('name')}>Name {sortKey === 'name' && (sortDir === 'asc' ? '↑' : '↓')}</th>
               <th onClick={() => toggleSort('gender')} style={{ width: '60px' }}>G</th>
               <th onClick={() => toggleSort('age')} style={{ width: '80px' }}>Age</th>
+              <th onClick={() => toggleSort('shirt')}>Shirt {sortKey === 'shirt' && (sortDir === 'asc' ? '↑' : '↓')}</th>
               <th onClick={() => toggleSort('event')}>Event</th>
               <th style={{ textAlign: 'right', paddingRight: 'var(--space-lg)' }}>Actions</th>
             </tr>
@@ -674,6 +686,7 @@ export const ParticipantManagement: React.FC<ParticipantManagementProps> = ({ ra
                 <td>{p.first_name} {p.last_name}</td>
                 <td>{p.gender}</td>
                 <td>{p.age_on_race_day}</td>
+                <td>{p.shirt_size || '—'}</td>
                 <td style={{ fontSize: '0.9em', color: 'var(--text-dim)' }}>{events.find(ev => ev.id === p.event_id)?.name}</td>
                 <td style={{ textAlign: 'right', paddingRight: 'var(--space-lg)' }}>
                     <button onClick={e => { e.stopPropagation(); handleEdit(p); }} style={{ backgroundColor: 'transparent', color: 'var(--text-dim)', padding: '4px 8px' }}>Edit</button>

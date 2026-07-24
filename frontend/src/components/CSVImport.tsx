@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 import { ParticipantService } from '../../bindings/github.com/ssnodgrass/race-assistant/services';
 import { DatabaseService } from '../../bindings/github.com/ssnodgrass/race-assistant';
 import { Event as RaceEvent } from '../../bindings/github.com/ssnodgrass/race-assistant/models';
+import { NonNegativeNumberInput } from './NonNegativeNumberInput';
 
 interface CSVImportProps {
   raceID: number;
@@ -27,6 +28,7 @@ export const CSVImport: React.FC<CSVImportProps> = ({ raceID, events, onComplete
     { key: 'age', label: 'Age' },
     { key: 'dob', label: 'DOB' },
     { key: 'bib', label: 'Bib Number' },
+    { key: 'shirt_size', label: 'Shirt Size' },
     { key: 'event', label: 'Event Name (Optional)' },
   ];
 
@@ -46,6 +48,7 @@ export const CSVImport: React.FC<CSVImportProps> = ({ raceID, events, onComplete
         if (lowerH === 'age') newMapping['age'] = i;
         if (lowerH.includes('dob') || lowerH.includes('birth')) newMapping['dob'] = i;
         if (lowerH === 'bib' || lowerH.includes('number')) newMapping['bib'] = i;
+        if (lowerH.includes('shirt') || lowerH.includes('giveaway')) newMapping['shirt_size'] = i;
         if (lowerH === 'event') newMapping['event'] = i;
       });
       setMapping(newMapping);
@@ -140,7 +143,7 @@ export const CSVImport: React.FC<CSVImportProps> = ({ raceID, events, onComplete
                     {assignNewBibs && (
                         <div className="flex-row">
                             <label style={{ margin: 0, fontSize: '0.85em' }}>START AT:</label>
-                            <input type="number" value={startBib} onChange={e => setStartBib(e.target.value)} style={{ width: '100px' }} />
+                            <NonNegativeNumberInput value={startBib} onValueChange={setStartBib} style={{ width: '100px' }} />
                         </div>
                     )}
                 </div>

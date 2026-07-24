@@ -4,6 +4,7 @@ import (
 	"crypto/rand"
 	"crypto/rsa"
 	"crypto/sha256"
+	"crypto/tls"
 	"crypto/x509"
 	"crypto/x509/pkix"
 	"encoding/base64"
@@ -36,6 +37,11 @@ type companionPKI struct {
 	keyFile       string
 	host          string
 	fallbackHost  string
+}
+
+type companionCertificateStore struct {
+	mu          sync.RWMutex
+	certificate *tls.Certificate
 }
 
 const companionStableHostname = "race-assistant.local"
@@ -231,25 +237,87 @@ func ensureCompanionPKI(host, fallbackHost string) (companionPKI, error) {
 	return companionPKI{caDER: caDER, caFingerprint: strings.ToUpper(strings.Join(splitEvery(hexString(sum), 2), ":")), certFile: certFile, keyFile: keyFile, host: host, fallbackHost: fallbackHost}, nil
 }
 
-func setCompanionDiscoveryError(service *services.CompanionService, err error) {
-	setup := service.GetSetup()
-	if err == nil {
-		setup.DiscoveryError = ""
-	} else {
-		setup.DiscoveryError = err.Error()
+func newCompanionCertificateStore(pki companionPKI) (*companionCertificateStore, error) {
+	store := &companionCertificateStore{}
+	if err := store.replace(pki); err != nil {
+		return nil, err
 	}
-	service.ConfigureServer(setup)
+	return store, nil
 }
 
-func startCompanionMDNS(service *services.CompanionService, hostname string) {
+func (s *companionCertificateStore) replace(pki companionPKI) error {
+	certificate, err := tls.LoadX509KeyPair(pki.certFile, pki.keyFile)
+	if err != nil {
+		return err
+	}
+	s.mu.Lock()
+	s.certificate = &certificate
+	s.mu.Unlock()
+	return nil
+}
+
+func (s *companionCertificateStore) getCertificate(*tls.ClientHelloInfo) (*tls.Certificate, error) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	if s.certificate == nil {
+		return nil, fmt.Errorf("companion TLS certificate is unavailable")
+	}
+	return s.certificate, nil
+}
+
+func companionFallbackURLs(ipString string) (string, string) {
+	if ipString == "" || ipString == "127.0.0.1" {
+		return "", ""
+	}
+	return fmt.Sprintf("https://%s:8443", ipString), fmt.Sprintf("http://%s:8080/companion-setup", ipString)
+}
+
+func updateCompanionNetworkSetup(service *services.CompanionService, ipString string) {
+	fallbackHTTPSURL, fallbackBootstrapURL := companionFallbackURLs(ipString)
+	if fallbackHTTPSURL == "" {
+		ipString = ""
+	}
+	service.UpdateServerNetwork(ipString, fallbackHTTPSURL, fallbackBootstrapURL)
+}
+
+func setCompanionDiscoveryError(service *services.CompanionService, err error) {
+	if err == nil {
+		service.SetDiscoveryError("")
+	} else {
+		service.SetDiscoveryError(err.Error())
+	}
+}
+
+func startCompanionMDNS(service *services.CompanionService, hostname, initialIP string, certificates *companionCertificateStore) {
 	go func() {
 		var responder *mdns.Server
 		var announcer *zeroconf.Server
 		currentIP := ""
+		certificateIP := initialIP
 		ticker := time.NewTicker(3 * time.Second)
 		defer ticker.Stop()
 		for {
 			ipString := preferredLANIP()
+			if ipString != certificateIP {
+				if ipString == "127.0.0.1" {
+					updateCompanionNetworkSetup(service, "")
+					certificateIP = ipString
+				} else {
+					updatedPKI, err := ensureCompanionPKI(hostname, ipString)
+					if err == nil {
+						err = certificates.replace(updatedPKI)
+					}
+					if err != nil {
+						service.SetServerError(fmt.Sprintf("could not refresh the IP fallback certificate for %s: %v", ipString, err))
+						log.Printf("Companion certificate refresh error: %v", err)
+					} else {
+						service.SetServerError("")
+						updateCompanionNetworkSetup(service, ipString)
+						certificateIP = ipString
+						log.Printf("Companion IP fallback updated to https://%s:8443", ipString)
+					}
+				}
+			}
 			if ipString != currentIP || responder == nil || announcer == nil {
 				if responder != nil {
 					_ = responder.Shutdown()
@@ -322,11 +390,17 @@ func splitEvery(v string, n int) []string {
 	return out
 }
 
-func (p companionPKI) registerBootstrap(mux *http.ServeMux) {
+func (p companionPKI) registerBootstrap(mux *http.ServeMux, service *services.CompanionService) {
 	mux.HandleFunc("/companion-setup", func(w http.ResponseWriter, r *http.Request) {
+		setup := service.GetSetup()
+		stableURL := strings.TrimRight(setup.HTTPSURL, "/") + "/companion/"
+		fallbackLink := ""
+		if setup.FallbackHTTPSURL != "" {
+			fallbackLink = fmt.Sprintf(`<a class="fallback" href="%s/companion/">IP fallback for this network</a>`, strings.TrimRight(setup.FallbackHTTPSURL, "/"))
+		}
 		w.Header().Set("Cache-Control", "no-store")
 		w.Header().Set("Content-Type", "text/html; charset=utf-8")
-		fmt.Fprintf(w, `<!doctype html><meta name="viewport" content="width=device-width"><title>Trust Race Assistant</title><style>body{font:18px system-ui;max-width:680px;margin:40px auto;padding:20px}a{display:block;padding:18px;background:#076fe5;color:white;margin:18px 0;text-align:center;border-radius:8px}.fallback{background:#596273}code{word-break:break-all}</style><h1>Trust this Race Assistant laptop</h1><p>Verify this fingerprint on the laptop:</p><code>%s</code><a href="/companion-ca.crt">Android / certificate download</a><a href="/race-assistant.mobileconfig">iPhone / iPad profile</a><p><strong>iPhone/iPad:</strong> installing the profile is only the first step. You must also open Settings → General → About → Certificate Trust Settings and enable full trust for Race Assistant Local CA.</p><a href="https://%s:8443/companion/">Open Companion at stable address</a><p>The <code>.local</code> address keeps the installed app working when the laptop's IP changes. It requires both devices on the same LAN or hotspot with multicast discovery enabled.</p><a class="fallback" href="https://%s:8443/companion/">IP fallback for this network</a><p>This laptop intentionally reuses the same local CA. Downloading it again will not change the fingerprint; if the trust test fails, remove an older Race Assistant profile, reinstall this one, and enable full trust again.</p>`, p.caFingerprint, p.host, p.fallbackHost)
+		fmt.Fprintf(w, `<!doctype html><meta name="viewport" content="width=device-width"><title>Trust Race Assistant</title><style>body{font:18px system-ui;max-width:680px;margin:40px auto;padding:20px}a{display:block;padding:18px;background:#076fe5;color:white;margin:18px 0;text-align:center;border-radius:8px}.fallback{background:#596273}code{word-break:break-all}</style><h1>Trust this Race Assistant laptop</h1><p>Verify this fingerprint on the laptop:</p><code>%s</code><a href="/companion-ca.crt">Android / certificate download</a><a href="/race-assistant.mobileconfig">iPhone / iPad profile</a><p><strong>iPhone/iPad:</strong> installing the profile is only the first step. You must also open Settings → General → About → Certificate Trust Settings and enable full trust for Race Assistant Local CA.</p><a href="%s">Open Companion at stable address</a><p>The <code>.local</code> address keeps the installed app working when the laptop's IP changes. It requires both devices on the same LAN or hotspot with multicast discovery enabled.</p>%s<p>This laptop intentionally reuses the same local CA. Downloading it again will not change the fingerprint; if the trust test fails, remove an older Race Assistant profile, reinstall this one, and enable full trust again.</p>`, p.caFingerprint, stableURL, fallbackLink)
 	})
 	mux.HandleFunc("/companion-ca.crt", func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Cache-Control", "no-store")
@@ -344,29 +418,39 @@ func (p companionPKI) registerBootstrap(mux *http.ServeMux) {
 	})
 }
 
-func startCompanionHTTPS(frontendFS fs.FS, service *services.CompanionService, pki companionPKI) {
+func startCompanionHTTPS(frontendFS fs.FS, service *services.CompanionService, pki companionPKI, certificates *companionCertificateStore) {
 	mux := http.NewServeMux()
 	files := http.FileServer(http.FS(frontendFS))
 	pairLimiter := newPairingAttemptLimiter(10, time.Minute)
-	mux.HandleFunc("/companion/", func(w http.ResponseWriter, r *http.Request) {
-		if r.URL.Path != "/companion/" {
-			files.ServeHTTP(w, r)
-			return
+	serveApp := func(root string) http.HandlerFunc {
+		return func(w http.ResponseWriter, r *http.Request) {
+			if r.URL.Path != root {
+				files.ServeHTTP(w, r)
+				return
+			}
+			f, err := frontendFS.Open("index.html")
+			if err != nil {
+				http.Error(w, "companion unavailable", 500)
+				return
+			}
+			defer f.Close()
+			w.Header().Set("Content-Type", "text/html; charset=utf-8")
+			_, _ = io.Copy(w, f)
 		}
-		f, err := frontendFS.Open("index.html")
-		if err != nil {
-			http.Error(w, "companion unavailable", 500)
-			return
-		}
-		defer f.Close()
-		w.Header().Set("Content-Type", "text/html; charset=utf-8")
-		_, _ = io.Copy(w, f)
-	})
+	}
+	mux.HandleFunc("/companion/", serveApp("/companion/"))
+	mux.HandleFunc("/checkin/", serveApp("/checkin/"))
 	mux.Handle("/assets/", files)
 	mux.Handle("/companion.webmanifest", files)
+	mux.Handle("/checkin.webmanifest", files)
 	mux.HandleFunc("/companion-sw.js", func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Cache-Control", "no-cache")
 		w.Header().Set("Service-Worker-Allowed", "/companion/")
+		files.ServeHTTP(w, r)
+	})
+	mux.HandleFunc("/checkin-sw.js", func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Cache-Control", "no-cache")
+		w.Header().Set("Service-Worker-Allowed", "/checkin/")
 		files.ServeHTTP(w, r)
 	})
 	mux.HandleFunc("/api/companion/pair", func(w http.ResponseWriter, r *http.Request) {
@@ -383,6 +467,7 @@ func startCompanionHTTPS(frontendFS fs.FS, service *services.CompanionService, p
 		var req struct {
 			Token string `json:"token"`
 			Name  string `json:"name"`
+			Mode  string `json:"mode"`
 		}
 		if json.NewDecoder(r.Body).Decode(&req) != nil {
 			http.Error(w, "invalid request", 400)
@@ -394,8 +479,41 @@ func startCompanionHTTPS(frontendFS fs.FS, service *services.CompanionService, p
 			return
 		}
 		pairLimiter.clear(clientKey)
-		http.SetCookie(w, &http.Cookie{Name: "race_companion", Value: token, Path: "/", Secure: true, HttpOnly: true, SameSite: http.SameSiteStrictMode, MaxAge: 86400})
+		cookieName := "race_companion"
+		if req.Mode == "checkin" {
+			cookieName = "race_checkin"
+		}
+		http.SetCookie(w, &http.Cookie{Name: cookieName, Value: token, Path: "/", Secure: true, HttpOnly: true, SameSite: http.SameSiteStrictMode, MaxAge: 86400})
 		writeJSON(w, state)
+	})
+	mux.HandleFunc("/api/companion/checkin/roster", func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodGet {
+			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+			return
+		}
+		roster, err := service.CheckInRoster(checkInCookie(r))
+		if err != nil {
+			writeCompanionError(w, err, http.StatusUnauthorized)
+			return
+		}
+		writeJSON(w, roster)
+	})
+	mux.HandleFunc("/api/companion/checkin", func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodPost {
+			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+			return
+		}
+		var request models.CompanionCheckInRequest
+		if json.NewDecoder(r.Body).Decode(&request) != nil {
+			http.Error(w, "invalid request", http.StatusBadRequest)
+			return
+		}
+		ack, err := service.SubmitCheckIn(checkInCookie(r), request)
+		if err != nil {
+			writeCompanionError(w, err, http.StatusConflict)
+			return
+		}
+		writeJSON(w, ack)
 	})
 	mux.HandleFunc("/api/companion/unpair", func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != http.MethodPost {
@@ -523,20 +641,31 @@ func startCompanionHTTPS(frontendFS fs.FS, service *services.CompanionService, p
 		writeJSON(w, map[string]bool{"ok": true})
 	})
 	mux.Handle("/", files)
-	server := &http.Server{Addr: ":8443", Handler: securityHeaders(mux), ReadHeaderTimeout: 5 * time.Second}
+	server := &http.Server{
+		Addr:              ":8443",
+		Handler:           securityHeaders(mux),
+		ReadHeaderTimeout: 5 * time.Second,
+		TLSConfig:         &tls.Config{MinVersion: tls.VersionTLS12, GetCertificate: certificates.getCertificate},
+	}
 	go func() {
 		log.Printf("Companion HTTPS server started on https://%s:8443", pki.host)
-		if err := server.ListenAndServeTLS(pki.certFile, pki.keyFile); err != nil && err != http.ErrServerClosed {
+		if err := server.ListenAndServeTLS("", ""); err != nil && err != http.ErrServerClosed {
 			log.Printf("Companion HTTPS server error: %v", err)
-			setup := service.GetSetup()
-			setup.ServerError = err.Error()
-			service.ConfigureServer(setup)
+			service.SetServerError(err.Error())
 		}
 	}()
 }
 
 func companionCookie(r *http.Request) string {
 	c, err := r.Cookie("race_companion")
+	if err != nil {
+		return ""
+	}
+	return c.Value
+}
+
+func checkInCookie(r *http.Request) string {
+	c, err := r.Cookie("race_checkin")
 	if err != nil {
 		return ""
 	}

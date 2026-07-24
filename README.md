@@ -51,7 +51,7 @@ That means the timer can concentrate on the line while another volunteer handles
 ## What it can do
 
 - **Race and event setup** — manage multiple distances within a race and configure award groups.
-- **Registration and check-in** — add runners manually, import CSV registrations, print bib labels, and optionally connect RunSignUp.
+- **Registration and check-in** — add runners manually, track shirt sizes, import CSV or RunSignUp registrations, print bib labels, and export a check-in worksheet.
 - **Flexible finish capture** — type bibs, use a barcode scanner, import placements, or use the touchscreen-friendly entry screen.
 - **Finish-line timing** — enter times manually, download from supported serial stopwatches, import Watchware data, or record from a phone.
 - **Phone Companion PWA** — pair one or more phones by secure QR code for Start, Finish Timer, and Bib Chute roles.
@@ -91,6 +91,7 @@ That means the timer can concentrate on the line while another volunteer handles
 The companion is an installable local web app—there is no separate app-store download. The laptop creates a private HTTPS service on the race network and displays the QR codes needed to trust and pair each phone.
 
 - Assign an exclusive **Start**, **Finish Timer**, or **Bib Chute** role to each phone.
+- Pair a separate **Pre-race Check-In** iPad to search the cached roster, assign bibs, and mark arrivals without internet access.
 - Capture the official start away from the laptop after calibrating on the race network.
 - Keep recording during short network interruptions; queued entries remain on the phone until acknowledged.
 - Review the local queue, retry synchronization, release roles, and pair the phone with another race session.

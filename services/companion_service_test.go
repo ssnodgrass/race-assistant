@@ -542,6 +542,134 @@ func TestCompanionNumericPairingCodeIsEightDigitsAndSingleUse(t *testing.T) {
 	}
 }
 
+func TestCompanionCheckInAssignsBibAndIsIdempotent(t *testing.T) {
+	service, _, race, _, e10 := setupCompanionTest(t)
+	changedRaceID := 0
+	changeCount := 0
+	service.participantsChanged = func(raceID int) {
+		changedRaceID = raceID
+		changeCount++
+	}
+	session, err := service.StartSession(race.ID, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	token := pairCompanion(t, service, session.ID, "Check-in iPad")
+	roster, err := service.CheckInRoster(token)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if roster.RaceName != race.Name || len(roster.Events) != 2 || len(roster.Participants) != 3 {
+		t.Fatalf("unexpected check-in roster: %+v", roster)
+	}
+
+	request := models.CompanionCheckInRequest{
+		RequestID:     "checkin-1",
+		ParticipantID: roster.Participants[0].ID,
+		BibNumber:     "501",
+		CapturedAt:    time.Now().UnixMilli(),
+		Participant: &models.CompanionCheckInParticipantUpdate{
+			EventID:   e10.ID,
+			FirstName: "Updated",
+			LastName:  "Runner",
+			Gender:    "N/A",
+			Age:       45,
+			ShirtSize: "2XL",
+		},
+	}
+	ack, err := service.SubmitCheckIn(token, request)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if ack.Status != "accepted" || !ack.Participant.CheckedIn || ack.Participant.BibNumber != "501" ||
+		ack.Participant.EventID != e10.ID || ack.Participant.FirstName != "Updated" ||
+		ack.Participant.LastName != "Runner" || ack.Participant.Gender != "N/A" ||
+		ack.Participant.Age != 45 || ack.Participant.ShirtSize != "2XL" {
+		t.Fatalf("unexpected check-in acknowledgement: %+v", ack)
+	}
+	if changedRaceID != race.ID || changeCount != 1 {
+		t.Fatalf("participant change notification = race %d count %d, want race %d count 1", changedRaceID, changeCount, race.ID)
+	}
+	var eventID, age int
+	var bib, firstName, lastName, gender, shirtSize string
+	var checkedIn bool
+	if err := service.db.QueryRow(`SELECT event_id,bib_number,first_name,last_name,gender,age_on_race_day,shirt_size,checked_in
+		FROM participants WHERE id=?`, request.ParticipantID).
+		Scan(&eventID, &bib, &firstName, &lastName, &gender, &age, &shirtSize, &checkedIn); err != nil {
+		t.Fatal(err)
+	}
+	if eventID != e10.ID || bib != "501" || firstName != "Updated" || lastName != "Runner" ||
+		gender != "N/A" || age != 45 || shirtSize != "2XL" || !checkedIn {
+		t.Fatalf("stored participant was not updated: event=%d bib=%q name=%q %q gender=%q age=%d shirt=%q checked=%v",
+			eventID, bib, firstName, lastName, gender, age, shirtSize, checkedIn)
+	}
+	duplicate, err := service.SubmitCheckIn(token, request)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if duplicate.Status != "duplicate" || duplicate.Participant.BibNumber != "501" {
+		t.Fatalf("idempotent retry changed the check-in: %+v", duplicate)
+	}
+	if changeCount != 1 {
+		t.Fatalf("idempotent retry emitted another participant change notification; count=%d", changeCount)
+	}
+}
+
+func TestCompanionCheckInRosterIncludesShirtSizeWhenAvailable(t *testing.T) {
+	service, _, race, _, _ := setupCompanionTest(t)
+	if _, err := service.db.Exec(`UPDATE participants SET shirt_size='Adult M' WHERE bib_number='101'`); err != nil {
+		t.Fatal(err)
+	}
+
+	session, err := service.StartSession(race.ID, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	token := pairCompanion(t, service, session.ID, "Shirt-size iPad")
+	roster, err := service.CheckInRoster(token)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, participant := range roster.Participants {
+		if participant.BibNumber == "101" {
+			if participant.ShirtSize != "Adult M" {
+				t.Fatalf("shirt size = %q, want %q", participant.ShirtSize, "Adult M")
+			}
+			return
+		}
+	}
+	t.Fatal("participant 101 not found in check-in roster")
+}
+
+func TestCompanionCheckInRejectsDuplicateRaceBib(t *testing.T) {
+	service, _, race, _, _ := setupCompanionTest(t)
+	session, err := service.StartSession(race.ID, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	token := pairCompanion(t, service, session.ID, "Check-in iPad")
+	roster, err := service.CheckInRoster(token)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var participantID int
+	for _, participant := range roster.Participants {
+		if participant.BibNumber != "101" {
+			participantID = participant.ID
+			break
+		}
+	}
+	_, err = service.SubmitCheckIn(token, models.CompanionCheckInRequest{
+		RequestID:     "duplicate-bib-checkin",
+		ParticipantID: participantID,
+		BibNumber:     "101",
+		CapturedAt:    time.Now().UnixMilli(),
+	})
+	if err == nil || !strings.Contains(err.Error(), "bib number already exists") {
+		t.Fatalf("expected duplicate bib rejection, got %v", err)
+	}
+}
+
 func TestCompanionUnpairRevokesDeviceAndReleasesRole(t *testing.T) {
 	service, _, race, _, _ := setupCompanionTest(t)
 	session, err := service.StartSession(race.ID, 0)

@@ -4,8 +4,8 @@ set -e
 # Build configuration
 APP_NAME="race-assistant"
 BUNDLE_ID="com.ssnodgrass.raceassistant"
-VERSION="1.3.2"
-BUILD_NUMBER="1.3.2"
+VERSION="1.4.0"
+BUILD_NUMBER="1.4.0"
 BUILD_DIR="build/ios"
 TARGET="simulator"
 

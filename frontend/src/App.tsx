@@ -21,6 +21,7 @@ import { StopwatchImport } from './components/StopwatchImport';
 import { LiveResults } from './components/LiveResults';
 import { CompanionManager } from './components/CompanionManager';
 import { CompanionApp } from './components/CompanionApp';
+import { CheckInApp } from './components/CheckInApp';
 import { isBrowserPreview } from './utils/runtime';
 import packageJSON from '../package.json';
 
@@ -30,6 +31,7 @@ type View = 'list' | 'race_detail' | 'create_race' | 'manage_events' | 'award_co
 
 function App() {
   const isCompanion = window.location.pathname.startsWith('/companion');
+  const isCheckIn = window.location.pathname.startsWith('/checkin');
   const appVersion = packageJSON.version;
   const initialView = new URLSearchParams(window.location.search).get('view') as View | null;
   const [dbPath, setDbPath] = useState<string>('');
@@ -50,7 +52,7 @@ function App() {
   }, [selectedRace]);
 
   const checkStatus = () => {
-    if (isCompanion) return;
+    if (isCompanion || isCheckIn) return;
     const isWeb = isBrowserMode;
     const statusCall = isWeb 
         ? fetch("/api/status").then(r => r.json())
@@ -63,6 +65,12 @@ function App() {
         if (path) {
             const isNewPath = path !== dbPath;
             if (isNewPath) setDbPath(path);
+
+            if (!isWeb && selectedRaceRef.current) {
+                ParticipantService.ListParticipants(selectedRaceRef.current.id)
+                    .then(list => setParticipants(list || []))
+                    .catch(() => {});
+            }
             
             if (isNewPath || races.length === 0) {
                 loadRaces().then(list => {
@@ -99,7 +107,14 @@ function App() {
         const u2 = Events.On('db:closed', () => {
             setDbPath(''); setRaces([]); setSelectedRace(null); setView('list');
         });
-        unsubs = [u1, u2];
+        const u3 = Events.On('participants:changed', (event) => {
+            const raceID = Number(event.data);
+            if (selectedRaceRef.current?.id !== raceID) return;
+            ParticipantService.ListParticipants(raceID)
+                .then(list => setParticipants(list || []))
+                .catch(console.error);
+        });
+        unsubs = [u1, u2, u3];
     }
 
     return () => { unsubs.forEach(u => u()); clearInterval(heartbeat); };
@@ -147,6 +162,7 @@ function App() {
   );
 
   if (isCompanion) return <CompanionApp />;
+  if (isCheckIn) return <CheckInApp />;
 
   if (isExternalDisplay || isBrowserMode) {
     return (

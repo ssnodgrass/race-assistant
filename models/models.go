@@ -48,6 +48,7 @@ type RSURegistration struct {
 	User     RSUUser `json:"user"`
 	BibNum   *string `json:"bib_num"`
 	Age      int     `json:"age"`
+	Giveaway *string `json:"giveaway"`
 	TeamName *string `json:"team_name"`
 }
 
@@ -65,6 +66,7 @@ type Participant struct {
 	Gender       string     `json:"gender"`
 	DOB          *time.Time `json:"dob"`
 	AgeOnRaceDay int        `json:"age_on_race_day"`
+	ShirtSize    string     `json:"shirt_size"`
 	CheckedIn    bool       `json:"checked_in"`
 }
 
@@ -170,6 +172,54 @@ type CompanionAck struct {
 	ParticipantName string `json:"participant_name"`
 	EventName       string `json:"event_name"`
 	Warning         string `json:"warning"`
+}
+
+type CompanionCheckInParticipant struct {
+	ID        int    `json:"id"`
+	EventID   int    `json:"event_id"`
+	EventName string `json:"event_name"`
+	BibNumber string `json:"bib_number"`
+	FirstName string `json:"first_name"`
+	LastName  string `json:"last_name"`
+	Gender    string `json:"gender"`
+	Age       int    `json:"age"`
+	ShirtSize string `json:"shirt_size"`
+	CheckedIn bool   `json:"checked_in"`
+}
+
+type CompanionCheckInEvent struct {
+	ID   int    `json:"id"`
+	Name string `json:"name"`
+}
+
+type CompanionCheckInRoster struct {
+	SessionID    string                        `json:"session_id"`
+	RaceName     string                        `json:"race_name"`
+	Events       []CompanionCheckInEvent       `json:"events"`
+	Participants []CompanionCheckInParticipant `json:"participants"`
+}
+
+type CompanionCheckInParticipantUpdate struct {
+	EventID   int    `json:"event_id"`
+	FirstName string `json:"first_name"`
+	LastName  string `json:"last_name"`
+	Gender    string `json:"gender"`
+	Age       int    `json:"age"`
+	ShirtSize string `json:"shirt_size"`
+}
+
+type CompanionCheckInRequest struct {
+	RequestID     string                             `json:"request_id"`
+	ParticipantID int                                `json:"participant_id"`
+	BibNumber     string                             `json:"bib_number"`
+	CapturedAt    int64                              `json:"captured_at_unix_ms"`
+	Participant   *CompanionCheckInParticipantUpdate `json:"participant,omitempty"`
+}
+
+type CompanionCheckInAck struct {
+	RequestID   string                      `json:"request_id"`
+	Status      string                      `json:"status"`
+	Participant CompanionCheckInParticipant `json:"participant"`
 }
 
 type SegmentEventSelection struct {

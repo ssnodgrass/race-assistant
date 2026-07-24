@@ -21,7 +21,7 @@ The in-app camera uses the same secure browser camera API on iOS and Android, bu
 ## Network and offline-shell test
 
 1. With the laptop and phone on the same LAN or hotspot, open `https://race-assistant.local:8443/companion/` and confirm the trusted companion loads.
-2. Note the laptop's current IP, pair the installed `.local` PWA, then change the laptop's DHCP address without closing Race Assistant. Allow up to six seconds and confirm the `.local` PWA reconnects. If the network interface itself changed, restart Race Assistant before testing the fallback URL.
+2. Note the laptop's current IP, pair the installed `.local` PWA, then change the laptop's DHCP address or network interface without closing Race Assistant. Allow up to six seconds and confirm the `.local` PWA reconnects and the desktop's IP fallback changes to the new address. Generate a new pairing QR after the address changes.
 3. Block multicast or use a network where `.local` does not resolve. Confirm the desktop shows a discovery warning and that its IP fallback setup and pairing QRs work.
 4. Launch the paired PWA once while connected so cache version 9 installs. Close it, stop Race Assistant or disconnect the phone, and reopen the PWA.
 5. Confirm the cached interface appears immediately instead of a black screen, displays **Server disconnected**, retains the local queue, and offers **Retry**.
@@ -40,6 +40,20 @@ Do not remove an old IP-based installation while it contains unsent entries. Res
 6. Enter incorrect codes repeatedly and confirm the server temporarily rate-limits pairing after ten attempts.
 7. With no current-session entries queued, select **Leave race / pair again**. Confirm the device is revoked, its role is released, and the installed PWA returns to its camera/code pairing screen.
 8. Queue an offline capture and confirm race switching is blocked until that current-session entry is synchronized or deleted through **Review Local Queue**.
+
+## Pre-race check-in test
+
+1. Start a companion session and choose **Pre-race check-in QR**.
+2. Scan the QR with an iPad, name the station, pair it, and add the check-in page to the home screen.
+3. Search by first name, last name, and existing bib; confirm the same participant is found each way.
+4. Select a participant, edit their name, event, age, gender, and shirt size, then assign a new bib.
+5. Check in the participant. Confirm the desktop participant list immediately shows every edit, the new bib, and checked-in status without changing views.
+6. Pair a second iPad and confirm it sees the update after its next roster refresh.
+7. Disconnect an iPad from the laptop network, check in another participant, and confirm the yellow disconnected warning and stored-check-in count appear. Open **Stored Check-Ins** and verify the pending change is listed.
+8. Reconnect and confirm automatic synchronization writes the assignment exactly once. Repeat with **Retry / Sync** to verify manual synchronization.
+9. While disconnected, attempt to assign a bib that another station has already used. Reconnect, confirm the server leaves the conflicting item pending with a duplicate-bib warning, then select that participant and submit a unique bib.
+
+Check-in updates the local Race Assistant database without internet access. This version does not send check-in status or bib assignments back to RunSignUp.
 
 ## Test fixture
 

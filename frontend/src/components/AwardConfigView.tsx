@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { EventService } from '../../bindings/github.com/ssnodgrass/race-assistant/services';
 import { AwardConfig, Event as RaceEvent, AgeGroup, AwardStrategy } from '../../bindings/github.com/ssnodgrass/race-assistant/models';
+import { NonNegativeNumberInput } from './NonNegativeNumberInput';
 
 interface AwardConfigViewProps {
   events: RaceEvent[];
@@ -86,7 +87,7 @@ export const AwardConfigView: React.FC<AwardConfigViewProps> = ({ events }) => {
               {config.include_overall && (
                 <div style={{ marginLeft: '30px', marginTop: '10px' }} className="flex-row">
                     <span>Places:</span>
-                    <input type="number" value={config.overall_count} onChange={e => setConfig({...config, overall_count: Number(e.target.value)})} style={{width: '80px'}} />
+                    <NonNegativeNumberInput value={config.overall_count} onValueChange={value => setConfig({...config, overall_count: Number(value || 0)})} style={{width: '80px'}} />
                 </div>
               )}
             </section>
@@ -99,8 +100,8 @@ export const AwardConfigView: React.FC<AwardConfigViewProps> = ({ events }) => {
                     </label>
                     {config.include_masters && (
                         <div style={{ marginTop: '10px' }}>
-                            <div style={{ marginBottom: '8px' }}><label>Min Age:</label><input type="number" value={config.masters_age} onChange={e => setConfig({...config, masters_age: Number(e.target.value)})} style={{ width: '100%' }} /></div>
-                            <div><label>Count:</label><input type="number" value={config.masters_count} onChange={e => setConfig({...config, masters_count: Number(e.target.value)})} style={{ width: '100%' }} /></div>
+                            <div style={{ marginBottom: '8px' }}><label>Min Age:</label><NonNegativeNumberInput value={config.masters_age} onValueChange={value => setConfig({...config, masters_age: Number(value || 0)})} style={{ width: '100%' }} /></div>
+                            <div><label>Count:</label><NonNegativeNumberInput value={config.masters_count} onValueChange={value => setConfig({...config, masters_count: Number(value || 0)})} style={{ width: '100%' }} /></div>
                         </div>
                     )}
                 </section>
@@ -112,8 +113,8 @@ export const AwardConfigView: React.FC<AwardConfigViewProps> = ({ events }) => {
                     </label>
                     {config.include_grand_masters && (
                         <div style={{ marginTop: '10px' }}>
-                            <div style={{ marginBottom: '8px' }}><label>Min Age:</label><input type="number" value={config.grand_masters_age} onChange={e => setConfig({...config, grand_masters_age: Number(e.target.value)})} style={{ width: '100%' }} /></div>
-                            <div><label>Count:</label><input type="number" value={config.grand_masters_count} onChange={e => setConfig({...config, grand_masters_count: Number(e.target.value)})} style={{ width: '100%' }} /></div>
+                            <div style={{ marginBottom: '8px' }}><label>Min Age:</label><NonNegativeNumberInput value={config.grand_masters_age} onValueChange={value => setConfig({...config, grand_masters_age: Number(value || 0)})} style={{ width: '100%' }} /></div>
+                            <div><label>Count:</label><NonNegativeNumberInput value={config.grand_masters_count} onValueChange={value => setConfig({...config, grand_masters_count: Number(value || 0)})} style={{ width: '100%' }} /></div>
                         </div>
                     )}
                 </section>
@@ -125,8 +126,8 @@ export const AwardConfigView: React.FC<AwardConfigViewProps> = ({ events }) => {
                     </label>
                     {config.include_senior_grand_masters && (
                         <div style={{ marginTop: '10px' }} className="flex-row">
-                            <div style={{ flex: 1 }}><label>Min Age:</label><input type="number" value={config.senior_grand_masters_age} onChange={e => setConfig({...config, senior_grand_masters_age: Number(e.target.value)})} /></div>
-                            <div style={{ flex: 1 }}><label>Count:</label><input type="number" value={config.senior_grand_masters_count} onChange={e => setConfig({...config, senior_grand_masters_count: Number(e.target.value)})} /></div>
+                            <div style={{ flex: 1 }}><label>Min Age:</label><NonNegativeNumberInput value={config.senior_grand_masters_age} onValueChange={value => setConfig({...config, senior_grand_masters_age: Number(value || 0)})} /></div>
+                            <div style={{ flex: 1 }}><label>Count:</label><NonNegativeNumberInput value={config.senior_grand_masters_count} onValueChange={value => setConfig({...config, senior_grand_masters_count: Number(value || 0)})} /></div>
                         </div>
                     )}
                 </section>
@@ -151,7 +152,7 @@ export const AwardConfigView: React.FC<AwardConfigViewProps> = ({ events }) => {
                 </label>
                 <div className="flex-row">
                     <span className="text-dim">Depth:</span>
-                    <input type="number" value={config.age_group_depth} onChange={e => setConfig({...config, age_group_depth: Number(e.target.value)})} style={{width: '70px'}} />
+                    <NonNegativeNumberInput value={config.age_group_depth} onValueChange={value => setConfig({...config, age_group_depth: Number(value || 0)})} style={{width: '70px'}} />
                 </div>
               </div>
             </section>
@@ -174,8 +175,8 @@ export const AwardConfigView: React.FC<AwardConfigViewProps> = ({ events }) => {
                 <tbody>
                     {config.age_groups.map((ag, i) => (
                     <tr key={i}>
-                        <td><input type="number" value={ag.min} onChange={e => updateAgeGroup(i, 'min', Number(e.target.value))} style={{width: '80px'}} /></td>
-                        <td><input type="number" value={ag.max} onChange={e => updateAgeGroup(i, 'max', Number(e.target.value))} style={{width: '80px'}} /></td>
+                        <td><NonNegativeNumberInput value={ag.min} onValueChange={value => updateAgeGroup(i, 'min', Number(value || 0))} style={{width: '80px'}} /></td>
+                        <td><NonNegativeNumberInput value={ag.max} onValueChange={value => updateAgeGroup(i, 'max', Number(value || 0))} style={{width: '80px'}} /></td>
                         <td style={{ textAlign: 'right' }}>
                             <button onClick={() => removeAgeGroup(i)} style={{ backgroundColor: 'transparent', color: 'var(--danger)', fontSize: '1.2rem', padding: '0 8px' }}>×</button>
                         </td>
